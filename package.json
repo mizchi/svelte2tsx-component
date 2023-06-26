@@ -1,0 +1,25 @@
+{
+  "name": "@mizchi/lib-template",
+  "author": "mizchi",
+  "license": "MIT",
+  "private": true,
+  "version": "0.0.0",
+  "description": "library template",
+  "type": "module",
+  "main": "lib/index.js",
+  "module": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest --run",
+    "typecheck": "tsc -p . --noEmit",
+    "format": "rome format --write src package.json"
+  },
+  "keywords": [],
+  "devDependencies": {
+    "rome": "^12.1.3",
+    "typescript": "5.1.3",
+    "vite": "4.3.9",
+    "vitest": "0.32.2"
+  }
+}

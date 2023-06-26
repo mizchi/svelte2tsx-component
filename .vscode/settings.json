@@ -1,0 +1,10 @@
+{
+  "[typescript]": {
+    "editor.defaultFormatter": "rome.rome",
+    "editor.formatOnSave": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "rome.rome",
+    "editor.formatOnSave": true
+  }
+}
