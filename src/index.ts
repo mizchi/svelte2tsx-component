@@ -6,6 +6,7 @@ import { generate as estreeToCode } from "astring";
 import prettier from "prettier";
 import { getReactEventName, getReactEventNameFromHandlerName } from "./eventMap";
 import { getReactAttributeName } from "./attributeMap";
+import { buildCss } from "./css";
 
 // Constants
 // const ATTRIBUTES_CONVERT_MAP: { [key: string]: string } = {
@@ -35,7 +36,8 @@ type ParsedComponentSignature = {
 
 /** @internal */
 type ParsedStyle = {
-  classAliasMap: Map<string, string>;
+  aliasMap: Map<string, string>;
+  statements: ts.Statement[];
 };
 
 /** @internal */
@@ -67,9 +69,9 @@ export function svelteToReact(code: string) {
   const codeBlock = buildCodeBlock(parsed.scriptTags, cctx);
 
   // consume style tags
-  buildStyleBlock(parsed.styleTags, cctx);
-  const templateBlock = buildTemplate(parsed.html, codeBlock, cctx);
-  const file = buildFile(templateBlock, cctx);
+  const parsedCss = buildCss(parsed.styleTags.join("\n"));
+  const templateBlock = buildTemplate(parsed.html, codeBlock, parsedCss.aliasMap, cctx);
+  const file = buildFile(templateBlock, parsedCss, cctx);
   const printer = ts.createPrinter();
   const outCode = printer.printFile(file);
   return outCode;
@@ -98,18 +100,25 @@ export function parse(code: string): Parsed {
   };
 }
 
-function buildStyleBlock(styleTags: string[], cctx: ConvertContext): ParsedStyle {
-  // TODO: collect scoped css alias
-  const classNames = new Map<string, string>();
-  return {
-    classAliasMap: classNames,
-  };
-}
+// function buildStyleBlock(styleTags: string[], cctx: ConvertContext): ParsedStyle {
+//   // TODO: collect scoped css alias
+//   const classNames = new Map<string, string>();
+//   const { statements, aliasMap } = buildCss(styleTags.join("\n"));
+//   return {
+//     aliasMap: classNames,
+
+//   };
+// }
 
 /** Convert svelte fragment to function component */
-function buildTemplate(template: string, signature: ParsedComponentSignature, cctx: ConvertContext): ts.Statement[] {
+function buildTemplate(
+  template: string,
+  signature: ParsedComponentSignature,
+  aliasMap: Map<string, string>,
+  cctx: ConvertContext,
+): ts.Statement[] {
   const parsedTemplate = parseSvelte(template);
-  const tsxExpr = templateToTsx(parsedTemplate.html as Fragment, cctx);
+  const tsxExpr = templateToTsx(parsedTemplate.html as Fragment, aliasMap, cctx);
 
   // const typeLiteral
   // if (cctx.hasDefaultSlot) {
@@ -581,7 +590,7 @@ function _buildCodeBlockWorker(
                 ts.isTypeLiteralNode(member.type)
               ) {
                 const eventName = member.name.text;
-                console.log("event name", member);
+                // console.log("event name", member);
                 // throw new Error("Not supported: dynamic event name");
                 // const reactEventName = getReactEventName(eventName);
                 const eventHandlerName = `on${eventName[0].toUpperCase()}${eventName.slice(1)}`;
@@ -685,7 +694,7 @@ function estreeExprToTsExpr(expr: Expression) {
   return tsExpr.expression;
 }
 
-function templateToTsx(root: Fragment, cctx: ConvertContext) {
+function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: ConvertContext) {
   return _visit(root, true, 0);
 
   function _visit(node: BaseNode, isElementChildren: boolean, depth = 0): ts.Node {
@@ -890,9 +899,41 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
         const name = node.name;
         // TODO: handle array
         const value = node.value[0] ?? "";
-        const right = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
         const attrName = getReactAttributeName(name);
-        return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
+        // use alias map to convert
+        if (attrName === "className" && value.type === "Text") {
+          const classSelectors: string[] = [];
+          const classRaws: string[] = [];
+          value.data.split(" ").map((cls: string) => {
+            if (aliasMap.has(cls)) {
+              classSelectors.push(aliasMap.get(cls)!);
+            } else {
+              // alert
+              classRaws.push(cls);
+            }
+          });
+          // className={[selector$aaa, selector$bbb].join(' ')}
+          return ts.factory.createJsxAttribute(
+            ts.factory.createIdentifier(attrName),
+            ts.factory.createJsxExpression(
+              undefined,
+              ts.factory.createCallExpression(
+                ts.factory.createPropertyAccessExpression(
+                  ts.factory.createArrayLiteralExpression([
+                    ...classSelectors.map((cls) => ts.factory.createIdentifier(cls)),
+                    ...classRaws.map((cls) => ts.factory.createStringLiteral(cls)),
+                  ]),
+                  "join",
+                ),
+                undefined,
+                [ts.factory.createStringLiteral(" ")],
+              ),
+            ),
+          );
+        } else {
+          const right = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
+          return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
+        }
       }
       case "Slot": {
         const isNamedSlot = (node.attributes ?? []).some((attr: Attribute) => attr.name === "name");
@@ -972,7 +1013,7 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
 }
 
 const typeOnlyReactFeatures = new Set(["ReactNode", "ReactElement", "ReactEventHandler", "ReactHTML"]);
-function buildFile(template: ts.Statement[], cctx: ConvertContext): ts.SourceFile {
+function buildFile(template: ts.Statement[], parsedCss: ParsedStyle, cctx: ConvertContext): ts.SourceFile {
   const reactImportDeclaration =
     cctx.reactFeatures.size > 0
       ? [
@@ -995,8 +1036,26 @@ function buildFile(template: ts.Statement[], cctx: ConvertContext): ts.SourceFil
           ),
         ]
       : [];
+  let cssImports: ts.Statement[] = [];
+  if (parsedCss.statements.length > 0) {
+    // reactImportDeclaration.push(
+    const linariaImportDeclaration = ts.factory.createImportDeclaration(
+      undefined,
+      // undefined,
+      ts.factory.createImportClause(
+        false,
+        undefined,
+        ts.factory.createNamedImports([
+          ts.factory.createImportSpecifier(false, undefined, ts.factory.createIdentifier("css")),
+        ]),
+      ),
+      // TODO: change option to switch css library
+      ts.factory.createStringLiteral("@linaria/core"),
+    );
+    cssImports = [linariaImportDeclaration];
+  }
   return ts.factory.createSourceFile(
-    [...reactImportDeclaration, ...cctx.toplevel, ...template],
+    [...reactImportDeclaration, ...cssImports, ...cctx.toplevel, ...template, ...parsedCss.statements],
     ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
     ts.NodeFlags.None,
   );
@@ -1020,7 +1079,7 @@ if (import.meta.vitest) {
       hello, {x}
     </div>
     <style>
-      div {
+      .red {
         color: red;
       }
     </style>
@@ -1074,7 +1133,7 @@ if (import.meta.vitest) {
     {/each}
     <button on:click={onClick}>click</button>
     <style>
-      div {
+      .red {
         color: red;
       }
     </style>
@@ -1111,7 +1170,7 @@ if (import.meta.vitest) {
     </script>
     <div></div>
     <style>
-      div {
+      .red {
         color: red;
       }
     </style>
@@ -1321,18 +1380,43 @@ if (import.meta.vitest) {
     expect(formatted).toContain(`<>{children}</>`);
   });
 
-  test.only("property name", () => {
+  test("property name", () => {
     const code = `
     <div class="c" on:click={onClick} on:keypress={onKeyPress}></div>
     <label for="foo">label</label>
 `;
     const result = svelteToReact(code);
     const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
-    console.log(formatted);
-    // expect(formatted).toContain(`import { type ReactNode } from "react";`);
-    // expect(formatted).toContain(`({ children }: `);
-    // expect(formatted).toContain(`{ children?: ReactNode }`);
-    // expect(formatted).toContain(`<>{children}</>`);
+    // console.log(formatted);
+    // expect(formatted).toContain(`className="c"`);
+    expect(formatted).toContain(`<label htmlFor="foo">`);
+  });
+
+  test("selector to css", () => {
+    const code = `
+    <div class="red container">
+    </div>
+    <span class="red">text</span>
+    <span class="raw">text</span>
+    <style>
+      .container {
+        display: flex;
+      }
+      .red {
+        color: red;
+      }
+    </style>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log(formatted);
+    expect(formatted).toContain(`className={[selector$red].join(" ")}`);
+    expect(formatted).toContain(`className={["raw"].join(" ")}`);
+    expect(formatted).toContain(`const selector$red = css\``);
+    expect(formatted).toContain(`const selector$container = css\``);
+    // expect(formatted).toContain(`className={\`red\`}`);
+    // expect(formatted).toContain(`className="c"`);
+    // expect(formatted).toContain(`<label htmlFor="foo">`);
   });
 
   test("throw unsuporretd", () => {

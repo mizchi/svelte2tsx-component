@@ -1,4 +1,7 @@
 import React, {useEffect, useRef, Fragment} from "react";
+import {css} from "@linaria/core";
+
+
 
 export function App(props: {children?: React.ReactNode}) {
 
@@ -14,10 +17,15 @@ export function App(props: {children?: React.ReactNode}) {
   return <>
     {console.log('render')}
     <div
-      className=""
+      className={red}
     >
       Hello World
       {props.children}
     </div>
   </>;
 }
+
+const red = css`
+  color: red; 
+`;
+
