@@ -153,7 +153,7 @@ export default ({
 - [x] SpecialElements: `<svelte:self>`
 - [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
 - [x] Template: attribute name converter like `class` => `className`, `on:click` => `onClick`
-- [ ] Style: `<style>` tag to something (`styled-components` or `emotion`?)
+- [x] Style: `<style>` tag to something (`@linaria/core`)
 - [ ] Plugin: transparent svelte to react loader for rollup or vite
 
 ## Unsupported yet
