@@ -1,30 +1,83 @@
-import { parse as parseSvelteTemplate } from "svelte/compiler";
+import { parse as parseSvelte } from "svelte/compiler";
 import { ts } from "./ts";
 import type { Ast, Attribute, BaseNode, Fragment } from "svelte/types/compiler/interfaces";
 import type { Expression } from "estree";
 import { generate as estreeToCode } from "astring";
 import prettier from "prettier";
 
-// from svelte source: https://github.com/sveltejs/svelte/blob/master/packages/svelte/src/compiler/preprocess/index.js#L255-L256
-const regex_style_tags = /<!--[^]*?-->|<style(\s[^]*?)?(?:>([^]*?)<\/style>|\/>)/gi;
-const regex_script_tags = /<!--[^]*?-->|<script(\s[^]*?)?(?:>([^]*?)<\/script>|\/>)/gi;
-
-type Preparsed = {
-  html: string;
-  styleTags: string[];
-  scriptTags: string[];
+// Constants
+const ATTRIBUTES_CONVERT_MAP: { [key: string]: string } = {
+  class: "className",
 };
 
-export function preparse(code: string): Preparsed {
+const EVENTS_CONVERT_MAP: { [key: string]: string } = {
+  click: "onClick",
+};
+
+// from svelte source: https://github.com/sveltejs/svelte/blob/master/packages/svelte/src/compiler/preprocess/index.js#L255-L256
+const REGEX_STYLE_TAGS = /<!--[^]*?-->|<style(\s[^]*?)?(?:>([^]*?)<\/style>|\/>)/gi;
+const REGEX_SCRIPT_TAGS = /<!--[^]*?-->|<script(\s[^]*?)?(?:>([^]*?)<\/script>|\/>)/gi;
+
+/** @internal */
+type Parsed = {
+  html: string;
+  styleTags: string[];
+  scriptTags: Array<{ lang?: string; module: boolean; code: string }>;
+};
+
+/** @internal */
+type ParsedComponentSignature = {
+  propsTypeLiteral: ts.TypeLiteralNode;
+  propsInitializer: ts.ObjectBindingPattern;
+};
+
+/** @internal */
+type ParsedStyle = {
+  classAliasMap: Map<string, string>;
+};
+
+/** @internal */
+type ConvertContext = {
+  toplevel: ts.Statement[];
+  instance: ts.Statement[];
+  mutables: Set<string>;
+  reactFeatures: Set<string>;
+};
+
+export function svelteToReact(code: string) {
+  const parsed = parse(code);
+
+  const cctx: ConvertContext = {
+    toplevel: [],
+    instance: [],
+    mutables: new Set<string>(),
+    reactFeatures: new Set<string>(),
+  };
+  const codeBlock = buildCodeBlock(parsed.scriptTags, cctx);
+
+  // consume style tags
+  buildStyleBlock(parsed.styleTags, cctx);
+  const templateBlock = buildTemplate(parsed.html, codeBlock, cctx);
+  const file = buildFile(templateBlock, cctx);
+  const printer = ts.createPrinter();
+  const outCode = printer.printFile(file);
+  return outCode;
+}
+
+export function parse(code: string): Parsed {
   const styleTags: string[] = [];
-  const scriptTags: string[] = [];
+  const scriptTags: Array<{ lang?: string; module: boolean; code: string }> = [];
   const html = code
-    .replace(regex_style_tags, (_, __, style) => {
+    .replace(REGEX_STYLE_TAGS, (_, __, style: string) => {
       styleTags.push(style ?? "");
       return "";
     })
-    .replace(regex_script_tags, (_, __, script) => {
-      scriptTags.push(script ?? "");
+    .replace(REGEX_SCRIPT_TAGS, (_, attributes: string, script: string) => {
+      // console.log("[script tag]", attributes);
+      scriptTags.push({
+        module: /context=['"]?module['"]?/.test(attributes ?? "") ?? false,
+        code: script ?? "",
+      });
       return "";
     });
   return {
@@ -34,70 +87,56 @@ export function preparse(code: string): Preparsed {
   };
 }
 
-export function svelteToReact(preparsed: Preparsed) {
-  const parsedTemplate = parseSvelteTemplate(preparsed.html);
-  const out = templateToTsx(parsedTemplate.html as Fragment);
-
-  // TODO: support multiple script tags
-  const {
-    toplevel: module,
-    instance,
-    propsTypeLiteral: propsType,
-    propsInitializer,
-  } = instanceToTs(preparsed.scriptTags[0]);
-  const componentFunc = ts.factory.createExportDefault(
-    ts.factory.createArrowFunction(
-      undefined,
-      undefined,
-      [
-        ts.factory.createParameterDeclaration(
-          undefined,
-          undefined,
-          propsInitializer,
-          undefined,
-          // undefined,
-          propsType,
-          // initializer
-          undefined,
-        ),
-      ],
-      undefined,
-      undefined,
-      ts.factory.createBlock([...instance, ts.factory.createReturnStatement(out as ts.Expression)]),
-    ),
-  );
-
-  const file = ts.factory.createSourceFile(
-    [...module, componentFunc],
-    ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
-    ts.NodeFlags.None,
-  );
-
-  const printer = ts.createPrinter();
-  const outCode = printer.printFile(file);
-  return outCode;
+function buildStyleBlock(styleTags: string[], cctx: ConvertContext): ParsedStyle {
+  // TODO: collect scoped css alias
+  const classNames = new Map<string, string>();
+  return {
+    classAliasMap: classNames,
+  };
 }
 
-// type ConvertableFeatures = "onMount";
-// const convertableFeatures: ConvertableFeatures[] = ["onMount"];
+/** Convert svelte fragment to function component */
+function buildTemplate(template: string, signature: ParsedComponentSignature, cctx: ConvertContext): ts.Statement[] {
+  const parsedTemplate = parseSvelte(template);
+  const tsx = templateToTsx(parsedTemplate.html as Fragment);
+  return [
+    ts.factory.createExportDefault(
+      ts.factory.createArrowFunction(
+        undefined,
+        undefined,
+        [
+          ts.factory.createParameterDeclaration(
+            undefined,
+            undefined,
+            signature.propsInitializer,
+            undefined,
+            // undefined,
+            signature.propsTypeLiteral,
+            // initializer
+            undefined,
+          ),
+        ],
+        undefined,
+        undefined,
+        ts.factory.createBlock([...cctx.instance, ts.factory.createReturnStatement(tsx as ts.Expression)]),
+      ),
+    ),
+  ];
+}
 
-type ConvertContext = {
-  mutables: Set<string>;
-  reactFeatures: Set<string>;
-};
+// TypeScript transformer for svelte
 const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.TransformerFactory<any> } = (cctx) => {
   return {
     transformer: (context) => {
-      // const mutableVars = new Set<string>();
       return (root) => {
         const visit: ts.Visitor = (node) => {
           if (ts.isVariableStatement(node)) {
             const isConst = node.declarationList.flags & ts.NodeFlags.Const;
             if (isConst) {
-              // TODO: transform righthand
               return ts.visitEachChild(node, visit, context);
-              // return node;
             }
+
+            // transform as let assignment
             const newStmts: ts.Statement[] = [];
             // const isLet = node.declarationList.flags & ts.NodeFlags.Let;
             for (const decl of node.declarationList.declarations) {
@@ -138,7 +177,6 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
             }
             return newStmts;
           }
-
           // let foo; foo = 1 => ((tmp = 1 || true) && set$foo(tmp) && tmp);
           if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
             // Only support direct ExpressionStatement assign like `foo = 1`
@@ -219,25 +257,37 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
   };
 };
 
-function instanceToTs(input: string): {
-  instance: ts.Statement[];
-  toplevel: ts.Statement[];
-  propsTypeLiteral: ts.TypeLiteralNode;
-  propsInitializer: ts.ObjectBindingPattern;
-} {
-  const inputFile = ts.createSourceFile("input.tsx", input, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
-  // TODO: hoist imports and exports
-  // TODO: handle computed props
+/** Convert script tags to toplevel and instance statements  */
+function buildCodeBlock(scriptTags: Parsed["scriptTags"], cctx: ConvertContext): ParsedComponentSignature {
+  if (scriptTags.length > 2) {
+    throw new Error("Not supported: script tag only allows 2 blocks including default and module");
+  }
+  const moduleBlock = scriptTags.find((tag) => tag.module);
+  const defaultBlock = scriptTags.find((tag) => !tag.module);
+  return _buildCodeBlockWorker(cctx, moduleBlock?.code, defaultBlock?.code);
+}
 
-  const instance: ts.Statement[] = [];
-  const memberDeclarations: Array<ts.VariableDeclaration> = [];
-  const toplevel: ts.Statement[] = [];
+function _buildCodeBlockWorker(
+  cctx: ConvertContext,
+  moduleCode: string = "",
+  defaultCode: string = "",
+): ParsedComponentSignature {
+  const propMembers: Array<ts.VariableDeclaration> = [];
+
+  // const instance: ts.Statement[] = [];
+  // const toplevel: ts.Statement[] = [];
   const instanceStmts: ts.Statement[] = [];
 
-  const cctx: ConvertContext = {
-    mutables: new Set<string>(),
-    reactFeatures: new Set<string>(),
-  };
+  // include module code to toplevel
+  if (moduleCode !== "") {
+    const moduleFile = ts.createSourceFile("_module.tsx", moduleCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+    for (const stmt of moduleFile.statements) {
+      cctx.toplevel.push(stmt);
+    }
+  }
+
+  const inputFile = ts.createSourceFile("_input.tsx", defaultCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  // TODO: handle computed props
 
   // one step toplevel analyze
   for (const stmt of inputFile.statements) {
@@ -251,7 +301,7 @@ function instanceToTs(input: string): {
             cctx.mutables.add(decl.name.text);
             cctx.reactFeatures.add("useState");
             if (isPropsMember) {
-              memberDeclarations.push(decl);
+              propMembers.push(decl);
             }
           }
           instanceStmts.push(stmt);
@@ -273,10 +323,10 @@ function instanceToTs(input: string): {
         }
         continue;
       }
-      toplevel.push(stmt);
+      cctx.toplevel.push(stmt);
       continue;
     } else if (ts.isExportDeclaration(stmt)) {
-      toplevel.push(stmt);
+      cctx.toplevel.push(stmt);
       continue;
     } else {
       instanceStmts.push(stmt);
@@ -285,16 +335,15 @@ function instanceToTs(input: string): {
 
   // TODO: check props is rewroted by body
   // const touchedProps = new Set<string>();
-  // batch transform
   const instanceBody = ts.factory.createBlock(instanceStmts);
 
   const { transformer } = createSvelteTransformer(cctx);
   const transformedStmts = ts.transform(instanceBody, [transformer]).transformed[0] as ts.Block;
-  instance.push(...transformedStmts.statements);
+  cctx.instance.push(...transformedStmts.statements);
 
   // convert prop decls to type literal
   const propsTypeLiteral = ts.factory.createTypeLiteralNode(
-    memberDeclarations.map((prop) => {
+    propMembers.map((prop) => {
       const name = prop.name as ts.Identifier;
       const type = prop.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
       const questionToken = prop.initializer != null ? ts.factory.createToken(ts.SyntaxKind.QuestionToken) : undefined;
@@ -303,36 +352,19 @@ function instanceToTs(input: string): {
   );
 
   const propsInitializer = ts.factory.createObjectBindingPattern(
-    memberDeclarations.map((prop) => {
+    propMembers.map((prop) => {
       return ts.factory.createBindingElement(undefined, undefined, prop.name as ts.Identifier, prop.initializer);
     }),
   );
 
-  const reactImports = ts.factory.createImportDeclaration(
-    undefined,
-    // undefined,
-    ts.factory.createImportClause(
-      false,
-      undefined,
-      ts.factory.createNamedImports(
-        [...cctx.reactFeatures].map((feature) => {
-          return ts.factory.createImportSpecifier(false, undefined, ts.factory.createIdentifier(feature));
-        }),
-      ),
-    ),
-    ts.factory.createStringLiteral("react"),
-  );
-  toplevel.unshift(reactImports);
   // TODO: transform instance body
   return {
-    instance,
-    toplevel,
     propsTypeLiteral,
     propsInitializer,
   };
 }
 
-function expressionToTsExpression(expr: Expression) {
+function estreeExprToTsExpr(expr: Expression) {
   const exprCode = estreeToCode(expr);
   const file = ts.createSourceFile("expr.tsx", exprCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
   const tsExpr = file.statements[0] as ts.ExpressionStatement;
@@ -343,18 +375,10 @@ function expressionToTsExpression(expr: Expression) {
 }
 
 function templateToTsx(root: Fragment) {
-  return _templateToTsx(root, true, 0);
+  return _buildTemplate(root, true, 0);
 }
 
-const attrConvertMap: { [key: string]: string } = {
-  class: "className",
-};
-
-const eventConvertMap: { [key: string]: string } = {
-  click: "onClick",
-};
-
-function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): ts.Node {
+function _buildTemplate(node: BaseNode, isElementChildren: boolean, depth = 0): ts.Node {
   console.log("  ".repeat(depth) + `[${node.type}]`, node.children?.length ?? 0);
   switch (node.type) {
     case "Text": {
@@ -365,14 +389,14 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
       }
     }
     case "MustacheTag": {
-      const expr = expressionToTsExpression(node.expression);
+      const expr = estreeExprToTsExpr(node.expression);
       return ts.factory.createJsxExpression(undefined, expr);
     }
     case "IfBlock": {
-      const expr = expressionToTsExpression(node.expression) as ts.Expression;
-      const children = (node.children ?? []).map((child) => _templateToTsx(child, true, depth + 1));
+      const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
+      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
       const elseBlock = node.else
-        ? (_templateToTsx(node.else, true, depth + 1) as ts.Expression)
+        ? (_buildTemplate(node.else, true, depth + 1) as ts.Expression)
         : ts.factory.createIdentifier("undefined");
       return ts.factory.createJsxExpression(
         undefined,
@@ -390,7 +414,7 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
       );
     }
     case "ElseBlock": {
-      const children = (node.children ?? []).map((child) => _templateToTsx(child, true, depth + 1));
+      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
       return ts.factory.createJsxFragment(
         ts.factory.createJsxOpeningFragment(),
         children as ts.JsxChild[],
@@ -400,8 +424,8 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
 
     case "EachBlock": {
       console.log("each", node);
-      const expr = expressionToTsExpression(node.expression) as ts.Expression;
-      const children = (node.children ?? []).map((child) => _templateToTsx(child, true, depth + 1));
+      const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
+      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
       // TODO: handle as expr
       const key = ts.factory.createIdentifier(node.context.name);
       return ts.factory.createJsxExpression(
@@ -440,14 +464,12 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
           ],
         ),
       );
-      // ts.factory.createJsxOpeningFragment(),
-      // ts.factory.createCallExpression(ts.factory.createIdentifier("React.Fragment"), undefined, [
     }
 
     case "EventHandler": {
-      const expr = expressionToTsExpression(node.expression);
+      const expr = estreeExprToTsExpr(node.expression);
       const name = node.name;
-      const eventName = eventConvertMap[name] ?? name;
+      const eventName = EVENTS_CONVERT_MAP[name] ?? name;
       return ts.factory.createJsxAttribute(
         ts.factory.createIdentifier(eventName),
         ts.factory.createJsxExpression(undefined, expr),
@@ -463,8 +485,8 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
       const name = node.name;
       // TODO: handle array
       const value = node.value[0] ?? "";
-      const right = _templateToTsx(value, false, depth + 1) as ts.JsxAttributeValue;
-      const attrName = attrConvertMap[name] ?? name;
+      const right = _buildTemplate(value, false, depth + 1) as ts.JsxAttributeValue;
+      const attrName = ATTRIBUTES_CONVERT_MAP[name] ?? name;
       return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
     }
     case "Element": {
@@ -472,10 +494,10 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
       const tagName = node.name as string;
 
       const attributes = node.attributes.map((attr: Attribute) => {
-        return _templateToTsx(attr, false, depth + 1);
+        return _buildTemplate(attr, false, depth + 1);
       });
 
-      const children = (node.children ?? []).map((child) => _templateToTsx(child, true, depth + 1));
+      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
       return ts.factory.createJsxElement(
         ts.factory.createJsxOpeningElement(
           ts.factory.createIdentifier(tagName),
@@ -492,7 +514,7 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
         // TODO: Handle template tag
         // return root.children.map((child) => htmlToTsx(child as BaseNode, depth + 1));
         for (const child of node.children) {
-          const expr = _templateToTsx(child as BaseNode, true, depth + 1);
+          const expr = _buildTemplate(child as BaseNode, true, depth + 1);
           contents.push(expr as ts.JsxElement);
         }
       }
@@ -508,10 +530,36 @@ function _templateToTsx(node: BaseNode, isElementChildren: boolean, depth = 0): 
   }
 }
 
+function buildFile(template: ts.Statement[], cctx: ConvertContext): ts.SourceFile {
+  const reactImportDeclaration = ts.factory.createImportDeclaration(
+    undefined,
+    // undefined,
+    ts.factory.createImportClause(
+      false,
+      undefined,
+      ts.factory.createNamedImports(
+        [...cctx.reactFeatures].map((feature) => {
+          return ts.factory.createImportSpecifier(false, undefined, ts.factory.createIdentifier(feature));
+        }),
+      ),
+    ),
+    ts.factory.createStringLiteral("react"),
+  );
+  return ts.factory.createSourceFile(
+    [reactImportDeclaration, ...cctx.toplevel, ...template],
+    ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
+    ts.NodeFlags.None,
+  );
+}
+
 if (import.meta.vitest) {
   const { test, expect } = import.meta.vitest;
   test("parse", () => {
     const code = `
+    <script lang="ts" context="module">
+      export const exported = 1;
+    </script>
+
     <script lang="ts">
       import { onMount } from "svelte";
       export let foo: number;
@@ -526,10 +574,12 @@ if (import.meta.vitest) {
       }
     </style>
 `;
-    const parsed = preparse(code);
+    const parsed = parse(code);
     // console.log(parsed.html);
     expect(parsed.styleTags.length).toBe(1);
-    expect(parsed.scriptTags.length).toBe(1);
+    expect(parsed.scriptTags.length).toBe(2);
+    expect(parsed.scriptTags.filter((script) => script.module).length).toBe(1);
+    expect(parsed.scriptTags.filter((script) => !script.module).length).toBe(1);
   });
 
   test("test", () => {
@@ -578,8 +628,8 @@ if (import.meta.vitest) {
       }
     </style>
 `;
-    const preparsed = preparse(code);
-    const result = svelteToReact(preparsed);
+    // const preparsed = preparse(code);
+    const result = svelteToReact(code);
     const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
     console.log("-------------");
     console.log(formatted);
@@ -598,5 +648,42 @@ if (import.meta.vitest) {
     expect(formatted).toContain("if-true");
     expect(formatted).toContain("<>else if block</>");
     expect(formatted).toContain(": <>else block</>");
+  });
+
+  test("with module", () => {
+    const code = `
+    <script lang="ts" context="module">
+      export const exported: number = 1;
+    </script>
+    <script lang="ts">
+      let v = 1;
+    </script>
+    <div></div>
+    <style>
+      div {
+        color: red;
+      }
+    </style>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    console.log("-------------");
+    console.log(formatted);
+    expect(formatted).toContain("export const exported: number = 1;");
+    // expect(formatted).toContain("{ foo, bar = 1 }");
+    // expect(formatted).toContain("foo: number");
+
+    // expect(formatted).toContain("useEffect(() => {");
+    // expect(formatted).toContain("const [mut, set$mut] = useState(2);");
+    // expect(formatted).toContain("export default (");
+    // expect(formatted).toContain("set$mut(4);");
+    // expect(formatted).toContain("<button onClick={onClick}");
+    // expect(formatted).toContain("className={className}");
+    // expect(formatted).toContain("[1, 2, 3].map((num, i) => (");
+    // expect(formatted).toContain("{true ? (");
+    // expect(formatted).toContain(") : (");
+    // expect(formatted).toContain("if-true");
+    // expect(formatted).toContain("<>else if block</>");
+    // expect(formatted).toContain(": <>else block</>");
   });
 }

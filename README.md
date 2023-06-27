@@ -12,6 +12,8 @@ However, the modern front-end ecosystem revolves around JSX, and we think we nee
 
 ## Example
 
+(not published yet)
+
 Convert this template.
 
 ```svelte
@@ -74,34 +76,82 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 };
 ```
 
-## TODO
+## Features (to v1)
 
+- [ ] Module: `<script context=module>`
 - [x] Props Type: `export let foo: number` to `{foo}: {foo: number}`
 - [x] Props Type: `export let bar: number = 1` to `{bar = 1}: {bar?: number}`
-- [x] Svelte API: `onMount(() => ...)` => `useEffect(() => ..., [])`
-- [x] Svelte API: `onDestroy(() => ...)` => `useEffect(() => { return () => {...} }, [])`
-- [ ] Svelte API: `const v = getContext(...)` => `const v = useContext(...)`
-- [ ] Svelte API: `setContext(...)` => `<Context.Provider value={...}>...</Context.Provider>`
+- [x] svelte: `onMount(() => ...)` => `useEffect(() => ..., [])`
+- [x] svelte: `onDestroy(() => ...)` => `useEffect(() => { return () => {...} }, [])`
+- [ ] svelte: `createEventDispatcher()`
+- [ ] svelte: `beforeUpdate()`
+- [ ] svelte: `afterUpdate()`
 - [x] Let: `let x = 1` => `const [x, set$x] = setState(1)`
 - [x] Let: `x = 1` => `set$x(1)`;
 - [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
-- [ ] Computed: `add1: v + 1;`
+- [ ] Computed: `$: added = v + 1;`
+- [ ] Computed: `$: ({ name } = person)`
+- [ ] Computed: `$: document.title = title` => `useEffect(() => {document.title = title}, [title])`
+- [ ] Computed: `$: <expr-or-block>` => `useEffect()`
 - [x] Template: `<div>1</div>` to `<><div>1</div></>`
 - [x] Template: `<div id="x"></div>` to `<><div id="x"></div></>`
 - [x] Template: `<div id={v}></div>` to `<><div id={v}></div></>`
-- [x] Template: `<div on:click={onClick}></div>` to `<><div onClick={onClick}></div></>`
-- [ ] Template: slot and `<svelte:fragment>`
+- [x] Template: `<div on:click={onClick}></div>` to `<div onClick={onClick}></div>`
 - [x] Template: `{#if ...}`
 - [x] Template: `{:else if ...}`
 - [x] Template: `{/else}`
 - [x] Template: `{#each items as item}`
 - [x] Template: `{#each items as item, idx}`
-- [ ] Template: with key `{#each items as item (thing.id)}`
-- [ ] Template: `<script context=module>`
+- [ ] Template: `{#await <expr>} ... {:then <name>} {:catch <name>} {/await}`
+- [ ] Template: `{#key <expr>}`
+- [ ] Template: with key `{#each items as item (item.id)}`
 - [ ] Template: Shorthand assignment `{id}`
 - [ ] Template: Spread `{...v}`
-- [ ] Template: `<style>` tag to something (`styled-components` or `emotion`?)
+- [ ] SpecialTag: `{@html <expr}`
+- [ ] SpecialTag: `{@debug mes}`
+- [ ] SpecialTag: `{@const v = 1}`
+- [ ] Directive: `<div on:click|preventDefault={onClick}></div>`
+- [ ] Directive: `<span bind:prop={}>`
+- [ ] Directive: `<Foo let:xxx>`
+- [ ] Directive: event delegation `<Foo on:trigger>`
+- [ ] SpecialElements: `<svelte:fragment>`
+- [ ] SpecialElements: `<slot>`
+- [ ] SpecialElements: `$$slots`
+- [ ] SpecialElements: `<svelte:self>`
+- [ ] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
+- [ ] SpecialElements: `<svelte:element this={expr} />`
+- [ ] Style: `<style>` tag to something (`styled-components` or `emotion`?)
 - [ ] Plugin: transparent svelte to react loader for rollup or vite
+
+## Low Proiority
+
+- [ ] svelte: `const v = getContext(...)` => `const v = useContext(...)`
+- [ ] svelte: `setContext(key, val)` => `<Context.Provider value={...}>...</Context.Provider>`
+- [ ] svelte: `getContext(key)` => `useContext`
+- [ ] svelte: `hasContext(key)`
+- [ ] svelte: `tick()`
+- [ ] svelte/store
+- [ ] svelte/motion
+- [ ] svelte/transition
+- [ ] svelte/animate
+- [ ] svelte/easing
+- [ ] svelte/action
+- [ ] Directive: `<div contenteditable="true" bind:innerHTML={html}>`
+- [ ] Directive: `<img bind:naturalWidth bind:naturalHeight></img>`
+- [ ] Directive: `<div bind:this={element}>`
+- [ ] Directive: `class:name`
+- [ ] Directive: `style:property`
+- [ ] Directive: `use:action`
+- [ ] SpecialElements: `<svelte:window />`
+- [ ] SpecialElements: `<svelte:document />`
+- [ ] SpecialElements: `<svelte:body />`
+- [ ] SpecialElements: `<svelte:options />`
+
+## Not Support (in the near future)
+
+- [ ] svelte: `getAllContexts()`
+- [ ] Style: `:global`
+
 
 ## Prior Art
 
