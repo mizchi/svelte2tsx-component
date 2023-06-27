@@ -98,7 +98,7 @@ function buildStyleBlock(styleTags: string[], cctx: ConvertContext): ParsedStyle
 /** Convert svelte fragment to function component */
 function buildTemplate(template: string, signature: ParsedComponentSignature, cctx: ConvertContext): ts.Statement[] {
   const parsedTemplate = parseSvelte(template);
-  const tsx = templateToTsx(parsedTemplate.html as Fragment);
+  const tsx = templateToTsx(parsedTemplate.html as Fragment, cctx);
   return [
     ts.factory.createExportDefault(
       ts.factory.createArrowFunction(
@@ -129,6 +129,7 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
   return {
     transformer: (context) => {
       return (root) => {
+        let localUniqueCounter = 0;
         const visit: ts.Visitor = (node) => {
           if (ts.isVariableStatement(node)) {
             const isConst = node.declarationList.flags & ts.NodeFlags.Const;
@@ -193,10 +194,74 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
               }
             }
           }
+          // Computed $: foo = val + 1 => useEffect(() => { set$foo(1)  }, [foo])
+          if (ts.isLabeledStatement(node) && ts.isIdentifier(node.label) && node.label.text === "$") {
+            // simple assignment to: const foo = val + 1;
+            if (
+              ts.isExpressionStatement(node.statement) &&
+              // foo = expr
+              ts.isBinaryExpression(node.statement.expression) &&
+              node.statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+              ts.isIdentifier(node.statement.expression.left) &&
+              ts.isExpression(node.statement.expression.right)
+              // TODO: check right includes mutables
+            ) {
+              // added const is mutable againt assigning value
+              cctx.mutables.add(node.statement.expression.left.text);
+              return ts.factory.createVariableStatement(
+                undefined,
+                ts.factory.createVariableDeclarationList(
+                  [
+                    ts.factory.createVariableDeclaration(
+                      ts.factory.createIdentifier(node.statement.expression.left.text),
+                      undefined,
+                      undefined,
+                      node.statement.expression.right,
+                    ),
+                  ],
+                  ts.NodeFlags.Const,
+                ),
+              );
+            }
+            // create useEffect withmemoized keys
+            // TODO: handle block
+            if (ts.isExpressionStatement(node.statement) || ts.isBlock(node.statement)) {
+              const memoizeKeys = new Set<string>();
+              const visitExpr = (node: ts.Node) => {
+                if (
+                  ts.isIdentifier(node) &&
+                  (node.parent ? !ts.isPropertyAccessExpression(node.parent) : true) &&
+                  cctx.mutables.has(node.text)
+                ) {
+                  memoizeKeys.add(node.text);
+                }
+                return ts.visitEachChild(node, visitExpr, context);
+              };
+              ts.visitEachChild(node.statement, visitExpr, context);
 
-          // onMount => useEffect()
-          if (ts.isCallExpression(node)) {
-            if (ts.isIdentifier(node.expression) && node.expression.text === "onMount") {
+              const newBlock = ts.isBlock(node.statement) ? node.statement : ts.factory.createBlock([node.statement]);
+              return ts.factory.createExpressionStatement(
+                ts.factory.createCallExpression(ts.factory.createIdentifier("useEffect"), undefined, [
+                  ts.factory.createArrowFunction(
+                    undefined,
+                    undefined,
+                    [],
+                    undefined,
+                    undefined,
+                    visit(newBlock) as ts.Block,
+                  ),
+                  ts.factory.createArrayLiteralExpression(
+                    [...memoizeKeys].map((key) => ts.factory.createIdentifier(key)),
+                  ),
+                ]),
+              );
+            }
+          }
+          // TODO: Refactor to svelte api converter
+          if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+            // TODO: Support aliased names
+            if (node.expression.text === "onMount") {
+              cctx.reactFeatures.add("useEffect");
               const arrowFunc = node.arguments[0] as ts.ArrowFunction;
               const body = arrowFunc.body as ts.Block;
               const newCallback = ts.factory.createArrowFunction(
@@ -217,7 +282,8 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
               ]);
             }
             // onDestroy => useEffect()
-            if (ts.isIdentifier(node.expression) && node.expression.text === "onDestroy") {
+            if (node.expression.text === "onDestroy") {
+              cctx.reactFeatures.add("useEffect");
               const arrowFunc = node.arguments[0] as ts.ArrowFunction;
               const body = arrowFunc.body as ts.Block;
               const newCallback = ts.factory.createArrowFunction(
@@ -245,8 +311,94 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
                     undefined,
                     ts.factory.createBlock([ts.factory.createReturnStatement(newCallback)]),
                   ),
+                  ts.factory.createArrayLiteralExpression([]),
                 ],
               );
+            }
+            // beforeUpdate to useEffect
+            if (node.expression.text === "beforeUpdate") {
+              cctx.reactFeatures.add("useEffect");
+              const arrowFunc = node.arguments[0] as ts.ArrowFunction;
+              const body = arrowFunc.body as ts.Block;
+              const newCallback = ts.factory.createArrowFunction(
+                undefined,
+                undefined,
+                [],
+                undefined,
+                undefined,
+                ts.factory.createBlock(
+                  body.statements.map((stmt) => {
+                    return visit(stmt);
+                  }) as ts.Statement[],
+                ),
+              );
+              return ts.factory.createCallExpression(ts.factory.createIdentifier("useEffect"), undefined, [
+                newCallback,
+                // no deps to update always
+              ]);
+            }
+            if (node.expression.text === "afterUpdate") {
+              cctx.reactFeatures.add("useRef");
+              const arrowFunc = node.arguments[0] as ts.ArrowFunction;
+              const body = arrowFunc.body as ts.Block;
+              const refName = `_ref${localUniqueCounter++}`;
+
+              const newCallback = ts.factory.createArrowFunction(
+                undefined,
+                undefined,
+                [],
+                undefined,
+                undefined,
+                ts.factory.createBlock([
+                  // if (!_ref$1.current) { _ref$1.current = true; return; }
+                  ts.factory.createIfStatement(
+                    // !_ref$1.current
+                    ts.factory.createPrefixUnaryExpression(
+                      ts.SyntaxKind.ExclamationToken,
+                      ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(refName), "current"),
+                    ),
+                    // { _ref$1.current = true; return; }
+                    ts.factory.createBlock([
+                      ts.factory.createExpressionStatement(
+                        ts.factory.createBinaryExpression(
+                          ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier(refName), "current"),
+                          ts.SyntaxKind.EqualsToken,
+                          ts.factory.createTrue(),
+                        ),
+                      ),
+                      ts.factory.createReturnStatement(),
+                    ]),
+                  ),
+                  // rest body
+                  ...(body.statements.map((stmt) => {
+                    return visit(stmt);
+                  }) as ts.Statement[]),
+                ]),
+              );
+              // register: const _ref$1 = useRef(false);
+              const refStatement = ts.factory.createVariableStatement(
+                undefined,
+                ts.factory.createVariableDeclarationList(
+                  [
+                    ts.factory.createVariableDeclaration(
+                      ts.factory.createIdentifier(refName),
+                      undefined,
+                      undefined,
+                      ts.factory.createCallExpression(ts.factory.createIdentifier("useRef"), undefined, [
+                        ts.factory.createFalse(),
+                      ]),
+                    ),
+                  ],
+                  ts.NodeFlags.Const,
+                ),
+              );
+              cctx.instance.unshift(refStatement);
+              return [
+                ts.factory.createCallExpression(ts.factory.createIdentifier("useEffect"), undefined, [
+                  newCallback,
+                  // always
+                ]),
+              ];
             }
           }
           return ts.visitEachChild(node, visit, context);
@@ -374,158 +526,213 @@ function estreeExprToTsExpr(expr: Expression) {
   return tsExpr.expression;
 }
 
-function templateToTsx(root: Fragment) {
-  return _buildTemplate(root, true, 0);
-}
+function templateToTsx(root: Fragment, cctx: ConvertContext) {
+  return _visit(root, true, 0);
 
-function _buildTemplate(node: BaseNode, isElementChildren: boolean, depth = 0): ts.Node {
-  console.log("  ".repeat(depth) + `[${node.type}]`, node.children?.length ?? 0);
-  switch (node.type) {
-    case "Text": {
-      if (isElementChildren) {
-        return ts.factory.createJsxText(node.data);
-      } else {
-        return ts.factory.createStringLiteral(node.data);
-      }
-    }
-    case "MustacheTag": {
-      const expr = estreeExprToTsExpr(node.expression);
-      return ts.factory.createJsxExpression(undefined, expr);
-    }
-    case "IfBlock": {
-      const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
-      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
-      const elseBlock = node.else
-        ? (_buildTemplate(node.else, true, depth + 1) as ts.Expression)
-        : ts.factory.createIdentifier("undefined");
-      return ts.factory.createJsxExpression(
-        undefined,
-        ts.factory.createConditionalExpression(
-          expr,
-          undefined,
-          ts.factory.createJsxFragment(
-            ts.factory.createJsxOpeningFragment(),
-            children as ts.JsxChild[],
-            ts.factory.createJsxJsxClosingFragment(),
-          ),
-          undefined,
-          elseBlock,
-        ),
-      );
-    }
-    case "ElseBlock": {
-      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
-      return ts.factory.createJsxFragment(
-        ts.factory.createJsxOpeningFragment(),
-        children as ts.JsxChild[],
-        ts.factory.createJsxJsxClosingFragment(),
-      );
-    }
-
-    case "EachBlock": {
-      console.log("each", node);
-      const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
-      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
-      // TODO: handle as expr
-      const key = ts.factory.createIdentifier(node.context.name);
-      return ts.factory.createJsxExpression(
-        undefined,
-        ts.factory.createCallExpression(
-          ts.factory.createPropertyAccessExpression(expr, ts.factory.createIdentifier("map")),
-          undefined,
-          [
-            ts.factory.createArrowFunction(
-              undefined,
-              undefined,
-              [
-                ts.factory.createParameterDeclaration(undefined, undefined, key, undefined, undefined, undefined),
-                ...(node.index != null
-                  ? [
-                      ts.factory.createParameterDeclaration(
-                        undefined,
-                        undefined,
-                        // TODO: handle as expr
-                        ts.factory.createIdentifier(node.index),
-                        undefined,
-                        undefined,
-                        undefined,
-                      ),
-                    ]
-                  : []),
-              ],
-              undefined,
-              undefined,
-              ts.factory.createJsxFragment(
-                ts.factory.createJsxOpeningFragment(),
-                children as ts.JsxChild[],
-                ts.factory.createJsxJsxClosingFragment(),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    case "EventHandler": {
-      const expr = estreeExprToTsExpr(node.expression);
-      const name = node.name;
-      const eventName = EVENTS_CONVERT_MAP[name] ?? name;
-      return ts.factory.createJsxAttribute(
-        ts.factory.createIdentifier(eventName),
-        ts.factory.createJsxExpression(undefined, expr),
-      );
-    }
-    case "AttributeShorthand": {
-      throw new Error("WIP");
-    }
-    case "AttributeSpread": {
-      throw new Error("WIP");
-    }
-    case "Attribute": {
-      const name = node.name;
-      // TODO: handle array
-      const value = node.value[0] ?? "";
-      const right = _buildTemplate(value, false, depth + 1) as ts.JsxAttributeValue;
-      const attrName = ATTRIBUTES_CONVERT_MAP[name] ?? name;
-      return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
-    }
-    case "Element": {
-      // TODO: handle component tag
-      const tagName = node.name as string;
-
-      const attributes = node.attributes.map((attr: Attribute) => {
-        return _buildTemplate(attr, false, depth + 1);
-      });
-
-      const children = (node.children ?? []).map((child) => _buildTemplate(child, true, depth + 1));
-      return ts.factory.createJsxElement(
-        ts.factory.createJsxOpeningElement(
-          ts.factory.createIdentifier(tagName),
-          undefined,
-          ts.factory.createJsxAttributes(attributes),
-        ),
-        children as ts.JsxChild[],
-        ts.factory.createJsxClosingElement(ts.factory.createIdentifier(tagName)),
-      );
-    }
-    case "Fragment": {
-      const contents: ts.JsxElement[] = [];
-      if (node.children && node.children.length > 0) {
-        // TODO: Handle template tag
-        // return root.children.map((child) => htmlToTsx(child as BaseNode, depth + 1));
-        for (const child of node.children) {
-          const expr = _buildTemplate(child as BaseNode, true, depth + 1);
-          contents.push(expr as ts.JsxElement);
+  function _visit(node: BaseNode, isElementChildren: boolean, depth = 0): ts.Node {
+    // console.log("  ".repeat(depth) + `[${node.type}]`, node.children?.length ?? 0);
+    switch (node.type) {
+      case "Text": {
+        if (isElementChildren) {
+          return ts.factory.createJsxText(node.data);
+        } else {
+          return ts.factory.createStringLiteral(node.data);
         }
       }
-      return ts.factory.createJsxFragment(
-        ts.factory.createJsxOpeningFragment(),
-        contents as ReadonlyArray<ts.JsxChild>,
-        ts.factory.createJsxJsxClosingFragment(),
-      );
-    }
-    default: {
-      throw new Error("Unknown node type: " + node.type);
+      case "MustacheTag": {
+        const expr = estreeExprToTsExpr(node.expression);
+        return ts.factory.createJsxExpression(undefined, expr);
+      }
+      case "IfBlock": {
+        const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
+        const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
+        const elseBlock = node.else
+          ? (_visit(node.else, true, depth + 1) as ts.Expression)
+          : ts.factory.createIdentifier("undefined");
+        return ts.factory.createJsxExpression(
+          undefined,
+          ts.factory.createConditionalExpression(
+            expr,
+            undefined,
+            ts.factory.createJsxFragment(
+              ts.factory.createJsxOpeningFragment(),
+              children as ts.JsxChild[],
+              ts.factory.createJsxJsxClosingFragment(),
+            ),
+            undefined,
+            elseBlock,
+          ),
+        );
+      }
+      case "ElseBlock": {
+        const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
+        return ts.factory.createJsxFragment(
+          ts.factory.createJsxOpeningFragment(),
+          children as ts.JsxChild[],
+          ts.factory.createJsxJsxClosingFragment(),
+        );
+      }
+      case "KeyBlock": {
+        cctx.reactFeatures.add("Fragment");
+        const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
+        const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
+        return ts.factory.createJsxElement(
+          ts.factory.createJsxOpeningElement(
+            ts.factory.createIdentifier("Fragment"),
+            undefined,
+            ts.factory.createJsxAttributes([
+              ts.factory.createJsxAttribute(
+                ts.factory.createIdentifier("key"),
+                ts.factory.createJsxExpression(undefined, expr),
+              ),
+            ]),
+          ),
+          children as ts.JsxChild[],
+          ts.factory.createJsxClosingElement(ts.factory.createIdentifier("Fragment")),
+        );
+      }
+      case "EachBlock": {
+        // console.log("each", node);
+        const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
+        const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
+        // TODO: handle as expr
+        const contextName = ts.factory.createIdentifier(node.context.name);
+        // const contextName = ts.factory.createIdentifier(node.key);
+        const hasKey = node.key != null;
+        const hasIndex = node.index != null;
+
+        if (hasKey || hasIndex) {
+          cctx.reactFeatures.add("Fragment");
+        }
+        return ts.factory.createJsxExpression(
+          undefined,
+          ts.factory.createCallExpression(
+            ts.factory.createPropertyAccessExpression(expr, ts.factory.createIdentifier("map")),
+            undefined,
+            [
+              ts.factory.createArrowFunction(
+                undefined,
+                undefined,
+                [
+                  ts.factory.createParameterDeclaration(
+                    undefined,
+                    undefined,
+                    contextName,
+                    undefined,
+                    undefined,
+                    undefined,
+                  ),
+                  ...(node.index != null
+                    ? [
+                        ts.factory.createParameterDeclaration(
+                          undefined,
+                          undefined,
+                          // TODO: handle as expr
+                          ts.factory.createIdentifier(node.index),
+                          undefined,
+                          undefined,
+                          undefined,
+                        ),
+                      ]
+                    : []),
+                ],
+                undefined,
+                undefined,
+                ts.factory.createJsxElement(
+                  ts.factory.createJsxOpeningElement(
+                    ts.factory.createIdentifier("Fragment"),
+                    undefined,
+                    ts.factory.createJsxAttributes(
+                      // key={key}
+                      hasKey
+                        ? [
+                            ts.factory.createJsxAttribute(
+                              ts.factory.createIdentifier("key"),
+                              ts.factory.createJsxExpression(undefined, estreeExprToTsExpr(node.key)),
+                            ),
+                          ]
+                        : // use index as key
+                        hasIndex
+                        ? [
+                            ts.factory.createJsxAttribute(
+                              ts.factory.createIdentifier("key"),
+                              ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier(node.index)),
+                            ),
+                          ]
+                        : [],
+                    ),
+                  ),
+                  children as ts.JsxChild[],
+                  ts.factory.createJsxClosingElement(ts.factory.createIdentifier("Fragment")),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      case "EventHandler": {
+        const expr = estreeExprToTsExpr(node.expression);
+        const name = node.name;
+        const eventName = EVENTS_CONVERT_MAP[name] ?? name;
+        return ts.factory.createJsxAttribute(
+          ts.factory.createIdentifier(eventName),
+          ts.factory.createJsxExpression(undefined, expr),
+        );
+      }
+      case "AttributeShorthand": {
+        return ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier(node.expression.name));
+      }
+      case "Spread": {
+        const expr = estreeExprToTsExpr(node.expression);
+        return ts.factory.createJsxSpreadAttribute(expr);
+      }
+      case "Attribute": {
+        const name = node.name;
+        // TODO: handle array
+        const value = node.value[0] ?? "";
+        const right = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
+        const attrName = ATTRIBUTES_CONVERT_MAP[name] ?? name;
+        return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
+      }
+      case "Element": {
+        // TODO: handle component tag
+        const tagName = node.name as string;
+
+        const attributes = node.attributes.map((attr: Attribute) => {
+          return _visit(attr, false, depth + 1);
+        });
+
+        const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
+        return ts.factory.createJsxElement(
+          ts.factory.createJsxOpeningElement(
+            ts.factory.createIdentifier(tagName),
+            undefined,
+            ts.factory.createJsxAttributes(attributes),
+          ),
+          children as ts.JsxChild[],
+          ts.factory.createJsxClosingElement(ts.factory.createIdentifier(tagName)),
+        );
+      }
+      case "Fragment": {
+        const contents: ts.JsxElement[] = [];
+        if (node.children && node.children.length > 0) {
+          // TODO: Handle template tag
+          // return root.children.map((child) => htmlToTsx(child as BaseNode, depth + 1));
+          for (const child of node.children) {
+            const expr = _visit(child as BaseNode, true, depth + 1);
+            contents.push(expr as ts.JsxElement);
+          }
+        }
+        return ts.factory.createJsxFragment(
+          ts.factory.createJsxOpeningFragment(),
+          contents as ReadonlyArray<ts.JsxChild>,
+          ts.factory.createJsxJsxClosingFragment(),
+        );
+      }
+      default: {
+        throw new Error("Unknown node type: " + node.type);
+      }
     }
   }
 }
@@ -554,6 +761,7 @@ function buildFile(template: ts.Statement[], cctx: ConvertContext): ts.SourceFil
 
 if (import.meta.vitest) {
   const { test, expect } = import.meta.vitest;
+
   test("parse", () => {
     const code = `
     <script lang="ts" context="module">
@@ -582,7 +790,7 @@ if (import.meta.vitest) {
     expect(parsed.scriptTags.filter((script) => !script.module).length).toBe(1);
   });
 
-  test("test", () => {
+  test("complex", () => {
     const code = `
     <script lang="ts">
       import { onMount, onDestroy } from "svelte";
@@ -631,8 +839,8 @@ if (import.meta.vitest) {
     // const preparsed = preparse(code);
     const result = svelteToReact(code);
     const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
-    console.log("-------------");
-    console.log(formatted);
+    // console.log("-------------");
+    // console.log(formatted);
     expect(formatted).toContain("{ foo, bar = 1 }");
     expect(formatted).toContain("foo: number");
 
@@ -667,23 +875,142 @@ if (import.meta.vitest) {
 `;
     const result = svelteToReact(code);
     const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
-    console.log("-------------");
-    console.log(formatted);
+    // console.log("-------------");
+    // console.log(formatted);
     expect(formatted).toContain("export const exported: number = 1;");
-    // expect(formatted).toContain("{ foo, bar = 1 }");
-    // expect(formatted).toContain("foo: number");
+  });
 
-    // expect(formatted).toContain("useEffect(() => {");
-    // expect(formatted).toContain("const [mut, set$mut] = useState(2);");
-    // expect(formatted).toContain("export default (");
-    // expect(formatted).toContain("set$mut(4);");
+  test("svelte builtin", () => {
+    const code = `
+    <script lang="ts">
+      import { afterUpdate, beforeUpdate, onMount, onDestroy } from "svelte";
+      onMount(() => {
+        console.log("mounted");
+        return () => {
+          console.log("unmount");
+        }
+      });
+      onDestroy(() => {
+        console.log("destroy");
+      });
+      beforeUpdate(() => {
+        console.log("before update");
+      });
+      afterUpdate(() => {
+        console.log("after update");
+      });
+    </script>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log("-------------");
+    // console.log(formatted);
+    expect(formatted).toContain(`import { useEffect, useRef } from "react";`);
+    expect(formatted).toContain(`_ref0.current = true`);
+  });
+
+  test("template", () => {
+    const code = `
+    <div {id} class={className}>
+      <h1>Nest</h1>
+      hello, {x}
+    </div>
+    <div {...obj} />
+    {#if true}
+      <div>if-true</div>
+    {:else if false}
+      else if block
+    {:else}
+      else block
+    {/if}
+    {#each [1] as num}
+      <span> {num} </span>
+    {/each}
+    {#each [1, 2, 3] as num, i}
+      <span>{num}:{i}</span>
+    {/each}
+    {#each items as item (item.id)}
+      <span>{item.name}</span>
+    {/each}
+    {#key 1}
+      <span>key</span>
+    {/key}
+    <!-- WIP
+    {#await new Promise(r => r())}
+      <span>await</span>
+    {:then value}
+      <span>then</span>
+    {:catch error}
+      <span>catch</span>
+    {/await}
+    -->
+    <button on:click={onClick}>click</button>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log("-------------");
+    // console.log(formatted);
+    expect(formatted).toContain(`import { Fragment } from "react";`);
+    // assign and shorthand
+    expect(formatted).toContain("<div id={id} className={className}>");
+    // spread
+    expect(formatted).toContain("<div {...obj}></div>");
+    // on:click
+    expect(formatted).toContain("<button onClick={onClick}");
+    // each
+    expect(formatted).toContain("[1, 2, 3].map((num, i) => (");
+    expect(formatted).toContain("items.map((item) => (");
+    expect(formatted).toContain("<Fragment key={item.id}>");
+    // if
+    expect(formatted).toContain("{true ? (");
+    // else
+    expect(formatted).toContain(") : (");
+    expect(formatted).toContain("if-true");
+    expect(formatted).toContain("<>else if block</>");
+    expect(formatted).toContain(": <>else block</>");
+    expect(formatted).toContain("<Fragment key={1}>");
+  });
+
+  test("computed", () => {
+    const code = `
+    <script lang="ts">
+      let v = 1;
+      $: computed = v + 1;
+      $: document.title = \`computed: \${computed}\`;
+      $: {
+        console.log(v);
+      }
+    </script>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log("-------------");
+    // console.log(formatted);
+    expect(formatted).toContain(`import { useState } from "react";`);
+    expect(formatted).toContain(`const [v, set$v] = useState(1);`);
+    expect(formatted).toContain(`const computed = v + 1;`);
+    expect(formatted).toContain(`document.title = \`computed: \${computed}\`;`);
+    expect(formatted).toContain(`, [computed])`);
+    expect(formatted).toContain(`, [v])`);
+
+    // expect(formatted).toContain(`import { Fragment } from "react";`);
+    // // assign and shorthand
+    // expect(formatted).toContain("<div id={id} className={className}>");
+    // // spread
+    // expect(formatted).toContain("<div {...obj}></div>");
+    // // on:click
     // expect(formatted).toContain("<button onClick={onClick}");
-    // expect(formatted).toContain("className={className}");
+    // // each
     // expect(formatted).toContain("[1, 2, 3].map((num, i) => (");
+    // expect(formatted).toContain("items.map((item) => (");
+    // expect(formatted).toContain("<Fragment key={item.id}>");
+    // // if
     // expect(formatted).toContain("{true ? (");
+    // // else
     // expect(formatted).toContain(") : (");
     // expect(formatted).toContain("if-true");
     // expect(formatted).toContain("<>else if block</>");
     // expect(formatted).toContain(": <>else block</>");
+    // expect(formatted).toContain("<Fragment key={1}>");
   });
 }

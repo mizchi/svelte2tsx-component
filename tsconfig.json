@@ -3,6 +3,7 @@
     "target": "ES2020",
     "module": "ESNext",
     "declaration": true,
+    "jsx": "react-jsx",
     "rootDir": "./src",
     "outDir": "./lib",
     "moduleResolution": "Bundler",

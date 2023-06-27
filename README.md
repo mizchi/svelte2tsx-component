@@ -78,21 +78,22 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 
 ## Features (to v1)
 
-- [ ] Module: `<script context=module>`
+- [x] Module: `<script context=module>`
 - [x] Props Type: `export let foo: number` to `{foo}: {foo: number}`
 - [x] Props Type: `export let bar: number = 1` to `{bar = 1}: {bar?: number}`
 - [x] svelte: `onMount(() => ...)` => `useEffect(() => ..., [])`
 - [x] svelte: `onDestroy(() => ...)` => `useEffect(() => { return () => {...} }, [])`
 - [ ] svelte: `createEventDispatcher()`
-- [ ] svelte: `beforeUpdate()`
-- [ ] svelte: `afterUpdate()`
+- [x] svelte: `beforeUpdate()` => `useEffect`
+- [x] svelte: `afterUpdate()` => `useEffect` (omit first change)
 - [x] Let: `let x = 1` => `const [x, set$x] = setState(1)`
 - [x] Let: `x = 1` => `set$x(1)`;
 - [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
-- [ ] Computed: `$: added = v + 1;`
+- [x] Computed: `$: added = v + 1;`
 - [ ] Computed: `$: ({ name } = person)`
-- [ ] Computed: `$: document.title = title` => `useEffect(() => {document.title = title}, [title])`
-- [ ] Computed: `$: <expr-or-block>` => `useEffect()`
+- [x] Computed: `$: document.title = title` => `useEffect(() => {document.title = title}, [title])`
+- [x] Computed: `$: { document.title = title }` => `useEffect(() => {document.title = title}, [title])`
+- [x] Computed: `$: <expr-or-block>` => `useEffect()`
 - [x] Template: `<div>1</div>` to `<><div>1</div></>`
 - [x] Template: `<div id="x"></div>` to `<><div id="x"></div></>`
 - [x] Template: `<div id={v}></div>` to `<><div id={v}></div></>`
@@ -103,12 +104,12 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 - [x] Template: `{#each items as item}`
 - [x] Template: `{#each items as item, idx}`
 - [ ] Template: `{#await <expr>} ... {:then <name>} {:catch <name>} {/await}`
-- [ ] Template: `{#key <expr>}`
-- [ ] Template: with key `{#each items as item (item.id)}`
-- [ ] Template: Shorthand assignment `{id}`
-- [ ] Template: Spread `{...v}`
+- [x] Template: `{#key <expr>}`
+- [x] Template: with key `{#each items as item (item.id)}`
+- [x] Template: Shorthand assignment `{id}`
+- [x] Template: Spread `{...v}`
 - [ ] SpecialTag: `{@html <expr}`
-- [ ] SpecialTag: `{@debug mes}`
+- [ ] SpecialTag: `{@debug "message"}`
 - [ ] SpecialTag: `{@const v = 1}`
 - [ ] Directive: `<div on:click|preventDefault={onClick}></div>`
 - [ ] Directive: `<span bind:prop={}>`

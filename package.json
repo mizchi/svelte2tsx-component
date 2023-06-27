@@ -20,6 +20,7 @@
     "@types/estree": "^1.0.1",
     "@types/estree-jsx": "^1.0.0",
     "@types/prettier": "^2.7.3",
+    "@types/react": "^18.2.14",
     "astring": "^1.8.6",
     "estree-jsx": "^0.0.1",
     "estree-walker": "^3.0.3",
