@@ -76,21 +76,61 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 };
 ```
 
-## Features (to v1)
+## EventDispatcher
+
+```svelte
+<script lang="ts">
+import {createEventDispatcher} from "svelte";
+const dispatch = createEventDispatcher<{
+  message: {
+    text: string;
+  };
+}>();
+const onClick = () => {
+  dispatch('message', {
+    text: 'Hello!'
+  });
+}
+</script>
+<div on:click={onClick}>
+hello
+</div>
+```
+
+to 
+
+```tsx
+export default ({
+  onMessage,
+}: {
+  onMessage?: (data: { text: string }) => void;
+}) => {
+  const onClick = () => {
+    onMessage?.({
+      text: "Hello!",
+    });
+  };
+  return (
+    <>
+      <div onClick={onClick}>hello</div>
+    </>
+  );
+};
+```
+
+## Features (to v0.1 first release)
 
 - [x] Module: `<script context=module>`
 - [x] Props Type: `export let foo: number` to `{foo}: {foo: number}`
 - [x] Props Type: `export let bar: number = 1` to `{bar = 1}: {bar?: number}`
 - [x] svelte: `onMount(() => ...)` => `useEffect(() => ..., [])`
-- [x] svelte: `onDestroy(() => ...)` => `useEffect(() => { return () => {...} }, [])`
-- [ ] svelte: `createEventDispatcher()`
+- [x] svelte: `onDestroy(() => ...)` => `useEffect(() => { return () => ... }, [])`
+- [x] svelte: `dispatch('foo', data)` => `onFoo?.(data)`
 - [x] svelte: `beforeUpdate()` => `useEffect`
 - [x] svelte: `afterUpdate()` => `useEffect` (omit first change)
 - [x] Let: `let x = 1` => `const [x, set$x] = setState(1)`
 - [x] Let: `x = 1` => `set$x(1)`;
-- [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
 - [x] Computed: `$: added = v + 1;`
-- [ ] Computed: `$: ({ name } = person)`
 - [x] Computed: `$: document.title = title` => `useEffect(() => {document.title = title}, [title])`
 - [x] Computed: `$: { document.title = title }` => `useEffect(() => {document.title = title}, [title])`
 - [x] Computed: `$: <expr-or-block>` => `useEffect()`
@@ -103,29 +143,24 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 - [x] Template: `{/else}`
 - [x] Template: `{#each items as item}`
 - [x] Template: `{#each items as item, idx}`
-- [ ] Template: `{#await <expr>} ... {:then <name>} {:catch <name>} {/await}`
 - [x] Template: `{#key <expr>}`
 - [x] Template: with key `{#each items as item (item.id)}`
 - [x] Template: Shorthand assignment `{id}`
 - [x] Template: Spread `{...v}`
-- [ ] SpecialTag: `{@html <expr}`
-- [ ] SpecialTag: `{@debug "message"}`
-- [ ] SpecialTag: `{@const v = 1}`
-- [ ] Directive: `<div on:click|preventDefault={onClick}></div>`
-- [ ] Directive: `<span bind:prop={}>`
-- [ ] Directive: `<Foo let:xxx>`
-- [ ] Directive: event delegation `<Foo on:trigger>`
-- [ ] SpecialElements: `<svelte:fragment>`
-- [ ] SpecialElements: `<slot>`
-- [ ] SpecialElements: `$$slots`
-- [ ] SpecialElements: `<svelte:self>`
-- [ ] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
-- [ ] SpecialElements: `<svelte:element this={expr} />`
+- [x] SpecialTag: RawMustacheTag `{@html <expr}`
+- [x] SpecialTag: DebugTag `{@debug "message"}`
+- [x] SpecialElements: default slot: `<slot>`
+- [x] SpecialElements: `<svelte:self>`
+- [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
 - [ ] Style: `<style>` tag to something (`styled-components` or `emotion`?)
 - [ ] Plugin: transparent svelte to react loader for rollup or vite
+- [ ] Template: propertyName converter like `class` => `className`, `on:click` => `onClick`
 
-## Low Proiority
+## Unsupported yet
 
+- [ ] Template: `{#await <expr>} ... {:then <name>} {:catch <name>} {/await}`
+- [ ] Computed: `$: ({ name } = person)`
+- [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
 - [ ] svelte: `const v = getContext(...)` => `const v = useContext(...)`
 - [ ] svelte: `setContext(key, val)` => `<Context.Provider value={...}>...</Context.Provider>`
 - [ ] svelte: `getContext(key)` => `useContext`
@@ -146,10 +181,19 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 - [ ] SpecialElements: `<svelte:window />`
 - [ ] SpecialElements: `<svelte:document />`
 - [ ] SpecialElements: `<svelte:body />`
-- [ ] SpecialElements: `<svelte:options />`
+- [ ] SpecialElements: `<svelte:element this={expr} />`
+- [ ] SpecialTag: ConstTag `{@const v = 1}`
+- [ ] Directive: `<div on:click|preventDefault={onClick}></div>`
+- [ ] Directive: `<span bind:prop={}>`
+- [ ] Directive: `<Foo let:xxx>`
+- [ ] Directive: event delegation `<Foo on:trigger>`
+- [ ] SpecialElements: `<svelte:fragment>`
+- [ ] SpecialElements: named slots: `<slot name="...">`
+- [ ] SpecialElements: `$$slots`
 
 ## Not Support (in the near future)
 
+- [ ] SpecialElements: `<svelte:options />`
 - [ ] svelte: `getAllContexts()`
 - [ ] Style: `:global`
 

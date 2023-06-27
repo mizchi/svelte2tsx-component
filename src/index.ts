@@ -1,7 +1,7 @@
 import { parse as parseSvelte } from "svelte/compiler";
 import { ts } from "./ts";
 import type { Ast, Attribute, BaseNode, Fragment } from "svelte/types/compiler/interfaces";
-import type { Expression } from "estree";
+import type { Expression, Identifier } from "estree";
 import { generate as estreeToCode } from "astring";
 import prettier from "prettier";
 
@@ -38,6 +38,11 @@ type ParsedStyle = {
 
 /** @internal */
 type ConvertContext = {
+  hasSelf: boolean;
+  // slotNames: Set<string>;
+  hasDefaultSlot: boolean;
+  dispatcherNames: Set<string>;
+  eventMap: Map<string, ts.TypeLiteralNode>;
   toplevel: ts.Statement[];
   instance: ts.Statement[];
   mutables: Set<string>;
@@ -48,6 +53,10 @@ export function svelteToReact(code: string) {
   const parsed = parse(code);
 
   const cctx: ConvertContext = {
+    hasSelf: false,
+    hasDefaultSlot: false,
+    dispatcherNames: new Set<string>(),
+    eventMap: new Map<string, ts.TypeLiteralNode>(),
     toplevel: [],
     instance: [],
     mutables: new Set<string>(),
@@ -98,28 +107,100 @@ function buildStyleBlock(styleTags: string[], cctx: ConvertContext): ParsedStyle
 /** Convert svelte fragment to function component */
 function buildTemplate(template: string, signature: ParsedComponentSignature, cctx: ConvertContext): ts.Statement[] {
   const parsedTemplate = parseSvelte(template);
-  const tsx = templateToTsx(parsedTemplate.html as Fragment, cctx);
+  const tsxExpr = templateToTsx(parsedTemplate.html as Fragment, cctx);
+
+  // const typeLiteral
+  // if (cctx.hasDefaultSlot) {
+  //   signature.propsInitializer.elements.push(
+
+  //   )
+  // cctx.reactFeatures.add("Fragment");
+
+  // const defaultSlot = ts.factory.createJsxElement(
+  //   ts.factory.createJsxOpeningElement(ts.factory.createIdentifier("Fragment")),
+  //   [
+  //     ts.factory.createJsxExpression(
+  //       undefined,
+  //       ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier("props"), "children"),
+  //     ),
+  //   ],
+  //   ts.factory.createJsxClosingElement(ts.factory.createIdentifier("Fragment")),
+  // );
+  // cctx.instance.push(
+  //   ts.factory.createVariableStatement(
+  //     undefined,
+  //     ts.factory.createVariableDeclarationList(
+  //       [
+  //         ts.factory.createVariableDeclaration(
+  //           ts.factory.createIdentifier("defaultSlot"),
+  //           undefined,
+  //           undefined,
+  //           defaultSlot,
+  //         ),
+  //       ],
+  //       ts.NodeFlags.Const,
+  //     ),
+  //   ),
+  // );
+  // }
+
+  if (cctx.hasDefaultSlot) {
+    cctx.reactFeatures.add("ReactNode");
+  }
+
+  const finalPropsTypeLiteral = cctx.hasDefaultSlot
+    ? ts.factory.createTypeLiteralNode([
+        ...signature.propsTypeLiteral.members,
+        ts.factory.createPropertySignature(
+          undefined,
+          ts.factory.createIdentifier("children"),
+          ts.factory.createToken(ts.SyntaxKind.QuestionToken),
+          ts.factory.createTypeReferenceNode(ts.factory.createIdentifier("ReactNode"), undefined),
+        ),
+      ])
+    : signature.propsTypeLiteral;
+
+  const finalPropsInitializer = cctx.hasDefaultSlot
+    ? ts.factory.createObjectBindingPattern([
+        ...signature.propsInitializer.elements,
+        ts.factory.createBindingElement(undefined, undefined, ts.factory.createIdentifier("children"), undefined),
+      ])
+    : signature.propsInitializer;
+
+  const hasAnyProp = finalPropsTypeLiteral.members.length > 0;
+  const properties = hasAnyProp
+    ? [
+        ts.factory.createParameterDeclaration(
+          undefined,
+          undefined,
+          finalPropsInitializer,
+          undefined,
+          // undefined,
+          finalPropsTypeLiteral,
+          // initializer
+          undefined,
+        ),
+      ]
+    : [];
+
+  const newBody = ts.factory.createBlock([
+    ...cctx.instance,
+    ts.factory.createReturnStatement(tsxExpr as ts.Expression),
+  ]);
+
   return [
     ts.factory.createExportDefault(
-      ts.factory.createArrowFunction(
-        undefined,
-        undefined,
-        [
-          ts.factory.createParameterDeclaration(
+      cctx.hasSelf
+        ? ts.factory.createFunctionExpression(
             undefined,
             undefined,
-            signature.propsInitializer,
+            ts.factory.createIdentifier("Component"),
             undefined,
-            // undefined,
-            signature.propsTypeLiteral,
-            // initializer
+            properties,
             undefined,
-          ),
-        ],
-        undefined,
-        undefined,
-        ts.factory.createBlock([...cctx.instance, ts.factory.createReturnStatement(tsx as ts.Expression)]),
-      ),
+            newBody,
+          )
+        : ts.factory.createArrowFunction(undefined, undefined, properties, undefined, undefined, newBody),
     ),
   ];
 }
@@ -132,11 +213,11 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
         let localUniqueCounter = 0;
         const visit: ts.Visitor = (node) => {
           if (ts.isVariableStatement(node)) {
+            // skip const
             const isConst = node.declarationList.flags & ts.NodeFlags.Const;
             if (isConst) {
               return ts.visitEachChild(node, visit, context);
             }
-
             // transform as let assignment
             const newStmts: ts.Statement[] = [];
             // const isLet = node.declarationList.flags & ts.NodeFlags.Let;
@@ -145,6 +226,10 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
               if (isExport) {
                 continue;
               }
+              // extract dispatcher type and strip
+              // console.log("decl", decl.initializer);
+
+              // let foo
               if (ts.isIdentifier(decl.name)) {
                 if (cctx.mutables.has(decl.name.text)) {
                   // mark is mutable to provide onProps
@@ -259,6 +344,25 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
           }
           // TODO: Refactor to svelte api converter
           if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+            if (cctx.dispatcherNames.has(node.expression.text)) {
+              // dispatch("foo", { detail: 1 }) to onFoo({ detail: 1 })
+              const firstArg = node.arguments[0];
+              if (ts.isStringLiteral(firstArg)) {
+                const eventName = `on${firstArg.text[0].toUpperCase()}${firstArg.text.slice(1)}`;
+                return ts.factory.createCallChain(
+                  ts.factory.createIdentifier(eventName),
+                  ts.factory.createToken(ts.SyntaxKind.QuestionDotToken),
+                  undefined,
+                  node.arguments.slice(1),
+                );
+              } else {
+                throw new Error("Not supported: dynamic event name");
+              }
+              // const funcName = `on${node.arguments[0].text[0].toUpperCase()}${node.arguments[0].text.slice(1)}`;
+              // return ts.factory.createCallExpression(
+              //   ts.factory.createIdentifier("createEventDispatcher"),
+              // )
+            }
             // TODO: Support aliased names
             if (node.expression.text === "onMount") {
               cctx.reactFeatures.add("useEffect");
@@ -442,12 +546,48 @@ function _buildCodeBlockWorker(
   // TODO: handle computed props
 
   // one step toplevel analyze
+  // const dispatcherNames = new Set<string>();
   for (const stmt of inputFile.statements) {
     // handle top level value declaration
     if (ts.isVariableStatement(stmt)) {
       const isPropsMember = stmt.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
       const isLetDecl = stmt.declarationList.flags & ts.NodeFlags.Let;
       for (const decl of stmt.declarationList.declarations) {
+        // console.log("finding dispatcher", decl.initializer);
+        if (
+          decl.initializer &&
+          ts.isCallExpression(decl.initializer) &&
+          ts.isIdentifier(decl.initializer.expression) &&
+          decl.initializer.expression.text === "createEventDispatcher"
+        ) {
+          if (ts.isIdentifier(decl.name)) {
+            cctx.dispatcherNames.add(decl.name.text);
+          }
+          // console.log("find dispatcher!");
+          // throw "stop";
+          const eventTypeMap = decl.initializer.typeArguments?.[0];
+          // TODO: trace type declaration
+          // if (firstTypeArg && ts.isTypeReferenceNode(firstTypeArg)) {
+          // }
+          if (eventTypeMap && ts.isTypeLiteralNode(eventTypeMap)) {
+            for (const member of eventTypeMap.members) {
+              if (
+                ts.isPropertySignature(member) &&
+                member.name &&
+                ts.isIdentifier(member.name) &&
+                member.type &&
+                ts.isTypeLiteralNode(member.type)
+              ) {
+                const eventName = member.name.text;
+                const eventHandlerName = `on${eventName[0].toUpperCase()}${eventName.slice(1)}`;
+                cctx.eventMap.set(eventHandlerName, member.type);
+              }
+            }
+          }
+          continue;
+        }
+
+        // let
         if (ts.isIdentifier(decl.name)) {
           if (isLetDecl) {
             cctx.mutables.add(decl.name.text);
@@ -463,16 +603,6 @@ function _buildCodeBlockWorker(
     // handle import ... from "svelte"
     else if (ts.isImportDeclaration(stmt)) {
       if (ts.isStringLiteral(stmt.moduleSpecifier) && stmt.moduleSpecifier.text === "svelte") {
-        // convert svelte import
-        if (stmt.importClause?.namedBindings && ts.isNamedImports(stmt.importClause.namedBindings)) {
-          for (const specifier of stmt.importClause.namedBindings.elements) {
-            if (ts.isImportSpecifier(specifier) && ts.isIdentifier(specifier.name)) {
-              if (specifier.name.text === "onMount") {
-                cctx.reactFeatures.add("useEffect");
-              }
-            }
-          }
-        }
         continue;
       }
       cctx.toplevel.push(stmt);
@@ -494,20 +624,44 @@ function _buildCodeBlockWorker(
   cctx.instance.push(...transformedStmts.statements);
 
   // convert prop decls to type literal
-  const propsTypeLiteral = ts.factory.createTypeLiteralNode(
-    propMembers.map((prop) => {
+  const propsTypeLiteral = ts.factory.createTypeLiteralNode([
+    ...propMembers.map((prop) => {
       const name = prop.name as ts.Identifier;
       const type = prop.type ?? ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
       const questionToken = prop.initializer != null ? ts.factory.createToken(ts.SyntaxKind.QuestionToken) : undefined;
       return ts.factory.createPropertySignature(undefined, name, questionToken, type);
     }),
-  );
+    ...[...cctx.eventMap.entries()].map(([name, typeLiteral]) => {
+      return ts.factory.createPropertySignature(
+        undefined,
+        ts.factory.createIdentifier(name),
+        ts.factory.createToken(ts.SyntaxKind.QuestionToken),
+        ts.factory.createFunctionTypeNode(
+          undefined,
+          [
+            ts.factory.createParameterDeclaration(
+              undefined,
+              undefined,
+              ts.factory.createIdentifier("data"),
+              undefined,
+              typeLiteral,
+              undefined,
+            ),
+          ],
+          ts.factory.createKeywordTypeNode(ts.SyntaxKind.VoidKeyword),
+        ),
+      );
+    }),
+  ]);
 
-  const propsInitializer = ts.factory.createObjectBindingPattern(
-    propMembers.map((prop) => {
+  const propsInitializer = ts.factory.createObjectBindingPattern([
+    ...propMembers.map((prop) => {
       return ts.factory.createBindingElement(undefined, undefined, prop.name as ts.Identifier, prop.initializer);
     }),
-  );
+    ...[...cctx.eventMap.keys()].map((name) => {
+      return ts.factory.createBindingElement(undefined, undefined, ts.factory.createIdentifier(name), undefined);
+    }),
+  ]);
 
   // TODO: transform instance body
   return {
@@ -539,10 +693,47 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
           return ts.factory.createStringLiteral(node.data);
         }
       }
+      case "DebugTag": {
+        return ts.factory.createJsxExpression(
+          undefined,
+          ts.factory.createCallExpression(
+            ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier("console"), "log"),
+            undefined,
+            [
+              ts.factory.createObjectLiteralExpression(
+                (node.identifiers ?? []).map((ident: Identifier) => {
+                  return ts.factory.createShorthandPropertyAssignment(ts.factory.createIdentifier(ident.name));
+                }),
+              ),
+            ],
+          ),
+        );
+      }
       case "MustacheTag": {
         const expr = estreeExprToTsExpr(node.expression);
         return ts.factory.createJsxExpression(undefined, expr);
       }
+      case "RawMustacheTag": {
+        // TODO: now I use dangerouslySetInnerHTML but should I use ref.current.innerHTML?
+        const expr = estreeExprToTsExpr(node.expression);
+        return ts.factory.createJsxSelfClosingElement(
+          ts.factory.createIdentifier("div"),
+          undefined,
+          ts.factory.createJsxAttributes([
+            ts.factory.createJsxAttribute(
+              ts.factory.createIdentifier("dangerouslySetInnerHTML"),
+              ts.factory.createJsxExpression(
+                undefined,
+                ts.factory.createObjectLiteralExpression([
+                  ts.factory.createPropertyAssignment(ts.factory.createIdentifier("__html"), expr),
+                ]),
+              ),
+              // ts.factory.createJsxExpression(undefined, expr),
+            ),
+          ]),
+        );
+      }
+
       case "IfBlock": {
         const expr = estreeExprToTsExpr(node.expression) as ts.Expression;
         const children = (node.children ?? []).map((child) => _visit(child, true, depth + 1));
@@ -671,6 +862,9 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
         );
       }
 
+      case "AwaitBlock": {
+        throw new Error("Not supported: {#await}");
+      }
       case "EventHandler": {
         const expr = estreeExprToTsExpr(node.expression);
         const name = node.name;
@@ -695,9 +889,44 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
         const attrName = ATTRIBUTES_CONVERT_MAP[name] ?? name;
         return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
       }
+      case "Slot": {
+        const isNamedSlot = (node.attributes ?? []).some((attr: Attribute) => attr.name === "name");
+        if (isNamedSlot) {
+          // TODO: handle named slot
+          throw new Error("Not supported: named slot");
+        } else {
+          cctx.hasDefaultSlot = true;
+        }
+        return ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier("children"));
+      }
+      case "InlineComponent":
       case "Element": {
+        let tagName: string;
+        if (node.name === "svelte:self") {
+          tagName = "Component";
+          cctx.hasSelf = true;
+        } else if (node.name === "svelte:component") {
+          // const thisIdent = node.expression as Identifier;
+          tagName = node.expression.name;
+          // console.log("bounded", boundedThis, node);
+          // const expression = boundedThis?.value[0];
+          // throw "stop";
+          // tagName = "This";
+          // if (boundedThis) {
+        } else {
+          tagName = node.name as string;
+        }
+        // if (node.name === "svelte:component") {
+        //   tagName = "Component";
+        //   cctx.hasSelf = true;
+        // } else {
+        //   tagName = node.name as string;
+        // }
+
         // TODO: handle component tag
-        const tagName = node.name as string;
+        // const tagName = node.name === "svelte:self" ? "Self" : node.name as string;
+        // cctx.hasSelf = true;
+        // console.log("tagName?", tagName);
 
         const attributes = node.attributes.map((attr: Attribute) => {
           return _visit(attr, false, depth + 1);
@@ -737,23 +966,32 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
   }
 }
 
+const typeOnlyReactFeatures = new Set(["ReactNode", "ReactElement", "ReactEventHandler", "ReactHTML"]);
 function buildFile(template: ts.Statement[], cctx: ConvertContext): ts.SourceFile {
-  const reactImportDeclaration = ts.factory.createImportDeclaration(
-    undefined,
-    // undefined,
-    ts.factory.createImportClause(
-      false,
-      undefined,
-      ts.factory.createNamedImports(
-        [...cctx.reactFeatures].map((feature) => {
-          return ts.factory.createImportSpecifier(false, undefined, ts.factory.createIdentifier(feature));
-        }),
-      ),
-    ),
-    ts.factory.createStringLiteral("react"),
-  );
+  const reactImportDeclaration =
+    cctx.reactFeatures.size > 0
+      ? [
+          ts.factory.createImportDeclaration(
+            undefined,
+            // undefined,
+            ts.factory.createImportClause(
+              false,
+              undefined,
+              ts.factory.createNamedImports(
+                [...cctx.reactFeatures].map((feature) => {
+                  if (typeOnlyReactFeatures.has(feature)) {
+                    return ts.factory.createImportSpecifier(true, undefined, ts.factory.createIdentifier(feature));
+                  }
+                  return ts.factory.createImportSpecifier(false, undefined, ts.factory.createIdentifier(feature));
+                }),
+              ),
+            ),
+            ts.factory.createStringLiteral("react"),
+          ),
+        ]
+      : [];
   return ts.factory.createSourceFile(
-    [reactImportDeclaration, ...cctx.toplevel, ...template],
+    [...reactImportDeclaration, ...cctx.toplevel, ...template],
     ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
     ts.NodeFlags.None,
   );
@@ -992,25 +1230,127 @@ if (import.meta.vitest) {
     expect(formatted).toContain(`document.title = \`computed: \${computed}\`;`);
     expect(formatted).toContain(`, [computed])`);
     expect(formatted).toContain(`, [v])`);
+  });
 
-    // expect(formatted).toContain(`import { Fragment } from "react";`);
-    // // assign and shorthand
-    // expect(formatted).toContain("<div id={id} className={className}>");
-    // // spread
-    // expect(formatted).toContain("<div {...obj}></div>");
-    // // on:click
-    // expect(formatted).toContain("<button onClick={onClick}");
-    // // each
-    // expect(formatted).toContain("[1, 2, 3].map((num, i) => (");
-    // expect(formatted).toContain("items.map((item) => (");
-    // expect(formatted).toContain("<Fragment key={item.id}>");
-    // // if
-    // expect(formatted).toContain("{true ? (");
-    // // else
-    // expect(formatted).toContain(") : (");
-    // expect(formatted).toContain("if-true");
-    // expect(formatted).toContain("<>else if block</>");
-    // expect(formatted).toContain(": <>else block</>");
-    // expect(formatted).toContain("<Fragment key={1}>");
+  test("special tags", () => {
+    const code = `
+    {@html "<div>html</div>"}
+    {@debug v}
+    <!-- {@const x = 1} -->
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log("-------------");
+    // console.log(formatted);
+    expect(formatted).toContain(`<div dangerouslySetInnerHTML={{ __html: "<div>html</div>" }} />`);
+    expect(formatted).toContain(`{console.log({ v })}`);
+  });
+
+  test("events", () => {
+    const code = `
+    <script lang="ts">
+    import {createEventDispatcher} from "svelte";
+    const dispatch = createEventDispatcher<{
+      message: {
+        text: string;
+      };
+    }>();
+    const onClick = () => {
+      dispatch('message', {
+        text: 'Hello!'
+      });
+    }
+  </script>
+  <div on:click={onClick}>
+    hello
+  </div>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log("-------------");
+    // console.log(formatted);
+    expect(formatted).toContain(`onMessage?: (data: { text: string }) => void`);
+    expect(formatted).toContain(`onMessage?.({`);
+  });
+
+  test("svelte:self / svelte:component", () => {
+    const code = `
+    <script lang="ts">
+      export let depth: number;
+      import Foo from "./Foo.svelte";
+      import Bar from "./Bar.svelte";
+      const Baz = Bar;
+    </script>
+    <Foo />
+    <svelte:component this={Baz} />
+    {#if depth < 3}
+      <svelte:self depth={depth + 1}/>
+    {/if}
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log(formatted);
+    // TODO: Self closing if no children
+    expect(formatted).toContain(`<Foo></Foo>`);
+    expect(formatted).toContain(`<Baz></Baz>`);
+    expect(formatted).toContain(`function Component(`);
+    expect(formatted).toContain(`<Component depth={depth + 1}></Component>`);
+  });
+
+  test("slots", () => {
+    const code = `
+    <script lang="ts">
+      import Foo from "./Foo.svelte";
+      import Bar from "./Bar.svelte";
+    </script>
+
+    <slot></slot>
+    <!-- <slot name="xxx"></slot> -->
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    // console.log(formatted);
+    expect(formatted).toContain(`import { type ReactNode } from "react";`);
+    expect(formatted).toContain(`({ children }: `);
+    expect(formatted).toContain(`{ children?: ReactNode }`);
+    expect(formatted).toContain(`<>{children}</>`);
+  });
+
+  test("throw unsuporretd", () => {
+    try {
+      svelteToReact(`<slot name="xxx"></slot>`);
+      throw new Error("unreachable");
+    } catch (err) {
+      if (err instanceof Error) {
+        expect(err.message).toContain("Not supported: named slot");
+      } else {
+        throw err;
+      }
+    }
+    try {
+      svelteToReact(`
+    {#await new Promise(r => r())}
+      <span>await</span>
+    {:then value}
+      <span>then</span>
+    {:catch error}
+      <span>catch</span>
+    {/await}
+`);
+      throw new Error("unreachable");
+    } catch (err) {
+      if (err instanceof Error) {
+        expect(err.message).toContain("Not supported: {#await}");
+      } else {
+        throw err;
+      }
+    }
+
+    // TODO: Self closing if no children
+    // expect(formatted).toContain(`<Foo></Foo>`);
+    // expect(formatted).toContain(`<Baz></Baz>`);
+    // expect(formatted).toContain(`function Component(`);
+    // expect(formatted).toContain(`<Component depth={depth + 1}></Component>`);
+    // expect(formatted).toContain(`onMessage?.({`);
   });
 }

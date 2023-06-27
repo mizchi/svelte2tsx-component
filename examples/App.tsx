@@ -1,6 +1,6 @@
-import React, {useEffect, useRef} from "react";
+import React, {useEffect, useRef, Fragment} from "react";
 
-export function App() {
+export function App(props: {children?: React.ReactNode}) {
 
   const _ref = useRef(false);
   useEffect(() => {
@@ -11,5 +11,11 @@ export function App() {
     }
     console.log('after update');
   });
-  return <div>Hello World</div>;
+  return <>
+    {console.log('render')}
+    <div>
+      Hello World
+      {props.children}
+    </div>
+  </>;
 }

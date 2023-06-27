@@ -6,5 +6,6 @@
   "[json]": {
     "editor.defaultFormatter": "rome.rome",
     "editor.formatOnSave": true
-  }
+  },
+  "svelte.enable-ts-plugin": true,
 }

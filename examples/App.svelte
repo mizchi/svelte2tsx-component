@@ -1,7 +1,17 @@
-<script context="module">
-  export const exp = 1;
+<script lang="ts">
+  import { createEventDispatcher } from "svelte";
+  const dispatch = createEventDispatcher<{
+    message: {
+      data: string;
+    };
+  }>();
+  const x: number = 1;
+
+  dispatch("message", {
+    data: "hello",
+  });
 </script>
 
-<script>
-  const x = 1;
-</script>
+<div>
+  xxx
+</div>
