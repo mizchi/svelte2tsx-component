@@ -4,15 +4,17 @@ import type { Ast, Attribute, BaseNode, Fragment } from "svelte/types/compiler/i
 import type { Expression, Identifier } from "estree";
 import { generate as estreeToCode } from "astring";
 import prettier from "prettier";
+import { getReactEventName, getReactEventNameFromHandlerName } from "./eventMap";
+import { getReactAttributeName } from "./attributeMap";
 
 // Constants
-const ATTRIBUTES_CONVERT_MAP: { [key: string]: string } = {
-  class: "className",
-};
+// const ATTRIBUTES_CONVERT_MAP: { [key: string]: string } = {
+//   class: "className",
+// };
 
-const EVENTS_CONVERT_MAP: { [key: string]: string } = {
-  click: "onClick",
-};
+// const EVENTS_CONVERT_MAP: { [key: string]: string } = {
+//   click: "onClick",
+// };
 
 // from svelte source: https://github.com/sveltejs/svelte/blob/master/packages/svelte/src/compiler/preprocess/index.js#L255-L256
 const REGEX_STYLE_TAGS = /<!--[^]*?-->|<style(\s[^]*?)?(?:>([^]*?)<\/style>|\/>)/gi;
@@ -579,6 +581,9 @@ function _buildCodeBlockWorker(
                 ts.isTypeLiteralNode(member.type)
               ) {
                 const eventName = member.name.text;
+                console.log("event name", member);
+                // throw new Error("Not supported: dynamic event name");
+                // const reactEventName = getReactEventName(eventName);
                 const eventHandlerName = `on${eventName[0].toUpperCase()}${eventName.slice(1)}`;
                 cctx.eventMap.set(eventHandlerName, member.type);
               }
@@ -868,7 +873,7 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
       case "EventHandler": {
         const expr = estreeExprToTsExpr(node.expression);
         const name = node.name;
-        const eventName = EVENTS_CONVERT_MAP[name] ?? name;
+        const eventName = getReactEventNameFromHandlerName(name);
         return ts.factory.createJsxAttribute(
           ts.factory.createIdentifier(eventName),
           ts.factory.createJsxExpression(undefined, expr),
@@ -886,7 +891,7 @@ function templateToTsx(root: Fragment, cctx: ConvertContext) {
         // TODO: handle array
         const value = node.value[0] ?? "";
         const right = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
-        const attrName = ATTRIBUTES_CONVERT_MAP[name] ?? name;
+        const attrName = getReactAttributeName(name);
         return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
       }
       case "Slot": {
@@ -1314,6 +1319,20 @@ if (import.meta.vitest) {
     expect(formatted).toContain(`({ children }: `);
     expect(formatted).toContain(`{ children?: ReactNode }`);
     expect(formatted).toContain(`<>{children}</>`);
+  });
+
+  test.only("property name", () => {
+    const code = `
+    <div class="c" on:click={onClick} on:keypress={onKeyPress}></div>
+    <label for="foo">label</label>
+`;
+    const result = svelteToReact(code);
+    const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+    console.log(formatted);
+    // expect(formatted).toContain(`import { type ReactNode } from "react";`);
+    // expect(formatted).toContain(`({ children }: `);
+    // expect(formatted).toContain(`{ children?: ReactNode }`);
+    // expect(formatted).toContain(`<>{children}</>`);
   });
 
   test("throw unsuporretd", () => {

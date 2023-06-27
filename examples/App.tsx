@@ -13,7 +13,9 @@ export function App(props: {children?: React.ReactNode}) {
   });
   return <>
     {console.log('render')}
-    <div>
+    <div
+      className=""
+    >
       Hello World
       {props.children}
     </div>

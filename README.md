@@ -118,7 +118,7 @@ export default ({
 };
 ```
 
-## Features (to v0.1 first release)
+## Basic Features (to v0.1 first release)
 
 - [x] Module: `<script context=module>`
 - [x] Props Type: `export let foo: number` to `{foo}: {foo: number}`
@@ -152,9 +152,9 @@ export default ({
 - [x] SpecialElements: default slot: `<slot>`
 - [x] SpecialElements: `<svelte:self>`
 - [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
+- [x] Template: attribute name converter like `class` => `className`, `on:click` => `onClick`
 - [ ] Style: `<style>` tag to something (`styled-components` or `emotion`?)
 - [ ] Plugin: transparent svelte to react loader for rollup or vite
-- [ ] Template: propertyName converter like `class` => `className`, `on:click` => `onClick`
 
 ## Unsupported yet
 
