@@ -904,14 +904,28 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
         if (attrName === "className" && value.type === "Text") {
           const classSelectors: string[] = [];
           const classRaws: string[] = [];
-          value.data.split(" ").map((cls: string) => {
+          for (const cls of value.data.split(/\s+/)) {
             if (aliasMap.has(cls)) {
               classSelectors.push(aliasMap.get(cls)!);
             } else {
               // alert
               classRaws.push(cls);
             }
-          });
+          }
+          // to className="a"
+          if (classSelectors.length === 0 && classRaws.length === 1) {
+            return ts.factory.createJsxAttribute(
+              ts.factory.createIdentifier(attrName),
+              ts.factory.createStringLiteral(classRaws[0]),
+            );
+          }
+          // to className={selector$a}
+          if (classSelectors.length === 1 && classRaws.length === 0) {
+            return ts.factory.createJsxAttribute(
+              ts.factory.createIdentifier(attrName),
+              ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier(classSelectors[0])),
+            );
+          }
           // className={[selector$aaa, selector$bbb].join(' ')}
           return ts.factory.createJsxAttribute(
             ts.factory.createIdentifier(attrName),
@@ -1394,10 +1408,10 @@ if (import.meta.vitest) {
 
   test("selector to css", () => {
     const code = `
-    <div class="red container">
-    </div>
-    <span class="red">text</span>
-    <span class="raw">text</span>
+    <span class="red">t1</span>
+    <span class="raw">t2</span>
+    <span class="red container">t3</span>
+    <span class="red raw">t4</span>
     <style>
       .container {
         display: flex;
@@ -1410,13 +1424,13 @@ if (import.meta.vitest) {
     const result = svelteToReact(code);
     const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
     // console.log(formatted);
-    expect(formatted).toContain(`className={[selector$red].join(" ")}`);
-    expect(formatted).toContain(`className={["raw"].join(" ")}`);
-    expect(formatted).toContain(`const selector$red = css\``);
+    expect(formatted).toContain(`import { css } from "@linaria/core";`);
+    expect(formatted).toContain(`<span className={selector$red}>t1</span>`);
+    expect(formatted).toContain(`<span className="raw">t2</span>`);
+    expect(formatted).toContain(`<span className={[selector$red, selector$container].join(" ")}>t3</span>`);
+    expect(formatted).toContain(`<span className={[selector$red, "raw"].join(" ")}>t4</span>`);
     expect(formatted).toContain(`const selector$container = css\``);
-    // expect(formatted).toContain(`className={\`red\`}`);
-    // expect(formatted).toContain(`className="c"`);
-    // expect(formatted).toContain(`<label htmlFor="foo">`);
+    expect(formatted).toContain(`const selector$red = css\``);
   });
 
   test("throw unsuporretd", () => {

@@ -153,19 +153,15 @@ export default ({
 - [x] SpecialElements: `<svelte:self>`
 - [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
 - [x] Template: attribute name converter like `class` => `className`, `on:click` => `onClick`
-- [x] Style: `<style>` tag to something (`@linaria/core`)
+- [x] Style: `<style>` tag to `@linaria/core`
+- [ ] Style: option for `import {css} from "..."` importer
 - [ ] Plugin: transparent svelte to react loader for rollup or vite
 
-## Unsupported yet
+## WIP
 
-- [ ] Template: `{#await <expr>} ... {:then <name>} {:catch <name>} {/await}`
+- [ ] Template: Await block `{#await <expr>}`
 - [ ] Computed: `$: ({ name } = person)`
 - [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
-- [ ] svelte: `const v = getContext(...)` => `const v = useContext(...)`
-- [ ] svelte: `setContext(key, val)` => `<Context.Provider value={...}>...</Context.Provider>`
-- [ ] svelte: `getContext(key)` => `useContext`
-- [ ] svelte: `hasContext(key)`
-- [ ] svelte: `tick()`
 - [ ] svelte/store
 - [ ] svelte/motion
 - [ ] svelte/transition
@@ -190,13 +186,18 @@ export default ({
 - [ ] SpecialElements: `<svelte:fragment>`
 - [ ] SpecialElements: named slots: `<slot name="...">`
 - [ ] SpecialElements: `$$slots`
+- [ ] Generator to `.svelte` => `.svelte.d.ts`
 
-## Not Support (in the near future)
+## Unsupported
 
 - [ ] SpecialElements: `<svelte:options />`
 - [ ] svelte: `getAllContexts()`
 - [ ] Style: `:global`
-
+- [ ] svelte: `const v = getContext(...)` => `const v = useContext(...)`
+- [ ] svelte: `setContext(key, val)` => `<Context.Provider value={...}>...</Context.Provider>`
+- [ ] svelte: `getContext(key)` => `useContext`
+- [ ] svelte: `hasContext(key)`
+- [ ] svelte: `tick()`
 
 ## Prior Art
 

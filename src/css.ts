@@ -1,4 +1,4 @@
-import postcss, { parse, stringify } from "postcss";
+import { parse } from "postcss";
 import ts from "typescript";
 import { toSafeIdentifier } from "./utils";
 
@@ -79,18 +79,12 @@ if (import.meta.vitest) {
       ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
       ts.NodeFlags.None,
     );
-    console.log(ts.createPrinter().printFile(source));
-    console.log(aliasMap);
+    // console.log(ts.createPrinter().printFile(source));
+    // console.log(aliasMap);
     // expect(result).toBe(`
     // .a {
     //   color: red;
     // }
     // `);
   });
-
-  // buildCss(`
-  // .a {
-  //   color: red;
-  // }
-  // `)
 }
