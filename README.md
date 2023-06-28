@@ -13,7 +13,8 @@ $ npm install react react-dom @types/react @types/react-dom @emotion/css -D
 
 - Generate Component Props Type from `script lang="ts"`, leaving TypeScript type information
 - Convert svelte's built-in functionality into an idiom on React with similar results
-- Import `.svelte` transparently from React
+- Import `.svelte` transparently as React Component
+- Support only svelte template subset
 
 ### API
 
