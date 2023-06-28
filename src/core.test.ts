@@ -1,6 +1,6 @@
 import prettier from "prettier";
 import { test, expect } from "vitest";
-import { parse, svelteToReact } from ".";
+import { parse, svelteToTsx } from "./core";
 
 test("parse", () => {
   const code = `
@@ -77,7 +77,7 @@ test("complex", () => {
     </style>
 `;
   // const preparsed = preparse(code);
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -113,7 +113,7 @@ test("with module", () => {
       }
     </style>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -141,7 +141,7 @@ test("svelte builtin", () => {
       });
     </script>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -186,7 +186,7 @@ test("template", () => {
     -->
     <button on:click={onClick}>click</button>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -222,7 +222,7 @@ test("computed", () => {
       }
     </script>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -240,7 +240,7 @@ test("special tags", () => {
     {@debug v}
     <!-- {@const x = 1} -->
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -267,7 +267,7 @@ test("events", () => {
     hello
   </div>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -289,7 +289,7 @@ test("svelte:self / svelte:component", () => {
       <svelte:self depth={depth + 1}/>
     {/if}
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log(formatted);
   // TODO: Self closing if no children
@@ -309,7 +309,7 @@ test("slots", () => {
     <slot></slot>
     <!-- <slot name="xxx"></slot> -->
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log(formatted);
   expect(formatted).toContain(`import { type ReactNode } from "react";`);
@@ -323,7 +323,7 @@ test("property name", () => {
     <div class="c" on:click={onClick} on:keypress={onKeyPress}></div>
     <label for="foo">label</label>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log(formatted);
   // expect(formatted).toContain(`className="c"`);
@@ -345,10 +345,10 @@ test("selector to css", () => {
       }
     </style>
 `;
-  const result = svelteToReact(code);
+  const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log(formatted);
-  expect(formatted).toContain(`import { css } from "@linaria/core";`);
+  expect(formatted).toContain(`import { css } from "@emotion/css";`);
   expect(formatted).toContain(`<span className={selector$red}>t1</span>`);
   expect(formatted).toContain(`<span className="raw">t2</span>`);
   expect(formatted).toContain(`<span className={[selector$red, selector$container].join(" ")}>t3</span>`);
@@ -357,9 +357,27 @@ test("selector to css", () => {
   expect(formatted).toContain(`const selector$red = css\``);
 });
 
+test("Options: css importer", () => {
+  const code = `
+    <span class="red">t1</span>
+    <style>
+      .red {
+        color: red;
+      }
+    </style>
+`;
+  const result = svelteToTsx(code, {
+    cssImporter: "@linaria/core",
+  });
+  const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+  // console.log(formatted);
+  expect(formatted).toContain(`import { css } from "@linaria/core";`);
+  expect(formatted).toContain(`<span className={selector$red}>t1</span>`);
+});
+
 test("throw unsuporretd", () => {
   try {
-    svelteToReact(`<slot name="xxx"></slot>`);
+    svelteToTsx(`<slot name="xxx"></slot>`);
     throw new Error("unreachable");
   } catch (err) {
     if (err instanceof Error) {
@@ -369,7 +387,7 @@ test("throw unsuporretd", () => {
     }
   }
   try {
-    svelteToReact(`
+    svelteToTsx(`
     {#await new Promise(r => r())}
       <span>await</span>
     {:then value}

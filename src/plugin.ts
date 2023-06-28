@@ -1,15 +1,16 @@
 import { type Plugin } from "rollup";
 import path from "node:path";
-import { svelteToReact } from ".";
+import { svelteToTsx } from "./core";
 import ts from "typescript";
+import { PluginOptions } from "./types";
 
-type Options = {
-  extensions?: string[];
-};
-
-export const plugin: (opts: Options) => Plugin = ({ extensions = [".svelte", ".tsx.svelte"] }) => {
+export const plugin: (opts: PluginOptions) => Plugin = ({
+  tsCompilerOptions,
+  extensions = [".svelte", ".tsx.svelte"],
+  ...options
+} = {}) => {
   return {
-    name: "svelte-to-react",
+    name: "svelte-to-tsx",
     resolveId(source, importer) {
       if (importer == null) {
         return;
@@ -22,11 +23,9 @@ export const plugin: (opts: Options) => Plugin = ({ extensions = [".svelte", ".t
     },
     transform(code, id) {
       if (id.endsWith(".svelte")) {
-        // console.log("[svelte-to-react]", id, code);
-        const tsxCode = svelteToReact(code);
-        // console.log("[svelte-to-react:converted]", tsxCode);
+        const tsxCode = svelteToTsx(code, options);
         const transpiled = ts.transpileModule(tsxCode, {
-          compilerOptions: {
+          compilerOptions: tsCompilerOptions ?? {
             module: ts.ModuleKind.ESNext,
             target: ts.ScriptTarget.ESNext,
             jsx: ts.JsxEmit.ReactJSX,

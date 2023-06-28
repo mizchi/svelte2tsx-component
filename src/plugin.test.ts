@@ -27,7 +27,7 @@ ReactDOMClient.createRoot(root).render(<Component name="world" />);
   };
   const bundle = await rollup({
     input: "input.tsx",
-    external: ["react", "react/jsx-runtime", "react-dom/client", "@linaria/core"],
+    external: ["react", "react/jsx-runtime", "react-dom/client", "@emotion/css"],
     plugins: [
       {
         name: "memory-loader",
@@ -67,7 +67,7 @@ ReactDOMClient.createRoot(root).render(<Component name="world" />);
   const outputCode = out.output[0].code;
   // console.log(outputCode);
   expect(outputCode).toContain("import { jsx, Fragment, jsxs } from 'react/jsx-runtime'");
-  expect(outputCode).toContain("import { css } from '@linaria/core'");
+  expect(outputCode).toContain("import { css } from '@emotion/css'");
   expect(outputCode).toContain("var Component = ({ name }) => {");
 });
 // }

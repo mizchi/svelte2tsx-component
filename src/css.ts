@@ -2,18 +2,15 @@ import { parse } from "postcss";
 import ts from "typescript";
 import { toSafeIdentifier } from "./utils";
 
+// TODO: Support object style
 export function buildCss(cssCode: string): {
   statements: ts.Statement[];
   aliasMap: Map<string, string>;
 } {
-  // let id = 0;
-  // const uniqKey = () => `s${id++}`;
-  // const process = postcss([]).plugins;
   const parser = parse(cssCode);
 
   const aliasMap = new Map<string, string>();
-  // const result = stringify(parser);
-  // console.log(parser);
+
   const stmts: ts.Statement[] = [];
 
   parser.walkRules((rule) => {
@@ -60,6 +57,4 @@ export function buildCss(cssCode: string): {
     statements: stmts,
     aliasMap,
   };
-  // return gulp.src('src/**/*.css')
-  //   .pipe(gulp.dest('dist'));
 }

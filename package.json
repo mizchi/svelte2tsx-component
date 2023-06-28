@@ -1,10 +1,10 @@
 {
-  "name": "@mizchi/svelte-to-react",
+  "name": "svelte-to-react",
   "author": "mizchi",
   "license": "MIT",
   "private": true,
-  "version": "0.0.0",
-  "description": "library template",
+  "version": "0.0.1",
+  "description": "svelte template to react component converter",
   "type": "module",
   "main": "lib/index.js",
   "module": "lib/index.js",
@@ -15,12 +15,15 @@
     "typecheck": "tsc -p . --noEmit",
     "format": "rome format --write src package.json"
   },
-  "keywords": [],
+  "keywords": ["svelte", "react", "compiler"],
+  "peerDependencies": {
+    "svelte": "4.*",
+    "typescript": "*"
+  },
   "devDependencies": {
     "@linaria/core": "^4.2.10",
     "@linaria/react": "^4.3.8",
     "@types/estree": "^1.0.1",
-    "@types/estree-jsx": "^1.0.0",
     "@types/prettier": "^2.7.3",
     "@types/react": "^18.2.14",
     "astring": "^1.8.6",
@@ -39,5 +42,6 @@
   "dependencies": {
     "svelte": "^4.0.0",
     "ts-clone-node": "^2.0.4"
-  }
+  },
+  "files": ["lib", "src"]
 }

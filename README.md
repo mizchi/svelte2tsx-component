@@ -1,20 +1,45 @@
-# Svelte to React Converter (PoC)
+# svelte-to-tsx
 
-Convert svelte template to react component
+svelte template to react component converter (PoC)
 
-## Why?
+```bash
+$ npm install svelte-to-tsx -D
 
-Svelte templates are not difficult to edit with only HTML and CSS knowledge, but the modern front-end ecosystem revolves around JSX.
+# default css generator is @emotion/css
+$ npm install svelte-to-tsx @emotion/css -D
+```
 
-However, the modern front-end ecosystem revolves around JSX, and we think we need a converter that transparently treats Svelte templates as React components. I think so.
+### API
 
-(This is my personal opinion).
+```ts
+import { svelteToTsx } from "svelte-to-tsx";
+const code = "<div></div>";
+const tsxCode = svelteToTsx(code);
+```
+
+### with vite
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import { plugin as svelteToTsx } from "svelte-to-tsx";
+import * as ts from "typescript";
+
+export default defineConfig({
+  plugins: [svelteToTsx({
+    extensions: [".svelte"],
+    tsCompilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
+    }
+  })],
+});
+```
 
 ## Example
 
-(not published yet)
-
-Convert this template.
+svelte template
 
 ```svelte
 <script lang="ts">
@@ -48,7 +73,7 @@ Convert this template.
 </style>
 ```
 
-to 
+to tsx react component
 
 ```ts
 import { useEffect, useState } from "react";
@@ -76,11 +101,35 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
 };
 ```
 
-## EventDispatcher
+## Transform Convensions
+
+### PropsType with export let
+
+svelte
+
+```svelte
+<script lang="ts">
+  export let foo: number;
+  export let bar: number = 1;
+</script>
+```
+
+tsx
+
+```tsx
+export default ({ foo, bar = 1 }: { foo: number, bar?: number }) => {
+  return <></>
+}
+```
+
+### PropsType with svelte's createEventDispatcher
+
+svelte
 
 ```svelte
 <script lang="ts">
 import {createEventDispatcher} from "svelte";
+// Only support ObjectTypeLiteral (TypeReference not supported)
 const dispatch = createEventDispatcher<{
   message: {
     text: string;
@@ -97,7 +146,7 @@ hello
 </div>
 ```
 
-to 
+tsx
 
 ```tsx
 export default ({
@@ -118,7 +167,83 @@ export default ({
 };
 ```
 
-## Basic Features (to v0.1 first release)
+### Expression in svelte template
+
+Supported
+
+```svelte
+<div id="myid"></div>
+<div id={expr}></div>
+<div {id}></div>
+<div {...params}></div>
+```
+
+Not supported (yet)
+
+```svelte
+<div id="{expr}"></div>
+```
+
+### onMount / onDestroy / beforeUpdate / afterUpdate
+
+Convert to react's `useEffect`
+
+### Style
+
+```svelte
+<span class="red">text</span>
+<style>
+  .red: {
+    color: red;
+  }
+</style>
+```
+
+to
+
+```tsx
+// Auto import with style block
+import { css } from "@emotion/css";
+
+// in tsx
+<span className={style$red}>text</span>
+
+const selector$red = css`
+  color: red;
+`;
+```
+
+Only support **single class selector** like `.red`.
+
+Not Supported these patterns.
+
+```css
+.foo > .bar {}
+
+div {}
+
+:global(div) {}
+```
+
+### Unsupported features
+
+- [ ] Await Block
+- [ ] Property Bindings `<input bind:value />`
+- `<svelte:options />`
+- `svelte` 's `setContext` / `getContext` / `tick` / `getAllContexts`
+- `svelte/motion`
+- `svelte/store`
+- `svelte/animation`
+- `svelte/transition`
+- `svelte/action`
+- `<Foo let:prop />`
+- css: `:global()`
+
+(Checkboxed item may be supportted latter)
+
+Currently, the scope is not parsed, so unintended variable conflicts may occur.
+
+## Basic Features
 
 - [x] Module: `<script context=module>`
 - [x] Props Type: `export let foo: number` to `{foo}: {foo: number}`
@@ -153,21 +278,14 @@ export default ({
 - [x] SpecialElements: `<svelte:self>`
 - [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
 - [x] Template: attribute name converter like `class` => `className`, `on:click` => `onClick`
-- [x] Style: `<style>` tag to `@linaria/core`
+- [x] Style: `<style>` tag to `@emotion/css`
 - [ ] Style: option for `import {css} from "..."` importer
-- [ ] Plugin: transparent svelte to react loader for rollup or vite
+- [x] Plugin: transparent svelte to react loader for rollup or vite
 
-## WIP
+## TODO
 
 - [ ] Template: Await block `{#await <expr>}`
 - [ ] Computed: `$: ({ name } = person)`
-- [ ] Let: `export let val` and `val = 2` => `props: { onChangeVal: (newVal) => void }` and `onChangeVal(2)`
-- [ ] svelte/store
-- [ ] svelte/motion
-- [ ] svelte/transition
-- [ ] svelte/animate
-- [ ] svelte/easing
-- [ ] svelte/action
 - [ ] Directive: `<div contenteditable="true" bind:innerHTML={html}>`
 - [ ] Directive: `<img bind:naturalWidth bind:naturalHeight></img>`
 - [ ] Directive: `<div bind:this={element}>`
@@ -188,16 +306,13 @@ export default ({
 - [ ] SpecialElements: `$$slots`
 - [ ] Generator to `.svelte` => `.svelte.d.ts`
 
-## Unsupported
+## Why?
 
-- [ ] SpecialElements: `<svelte:options />`
-- [ ] svelte: `getAllContexts()`
-- [ ] Style: `:global`
-- [ ] svelte: `const v = getContext(...)` => `const v = useContext(...)`
-- [ ] svelte: `setContext(key, val)` => `<Context.Provider value={...}>...</Context.Provider>`
-- [ ] svelte: `getContext(key)` => `useContext`
-- [ ] svelte: `hasContext(key)`
-- [ ] svelte: `tick()`
+Svelte templates are not difficult to edit with only HTML and CSS knowledge, but the modern front-end ecosystem revolves around JSX.
+
+However, the modern front-end ecosystem revolves around JSX, and we think we need a converter that transparently treats Svelte templates as React components. I think so.
+
+(This is my personal opinion).
 
 ## Prior Art
 
