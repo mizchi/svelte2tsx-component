@@ -1,13 +1,19 @@
 # svelte-to-tsx
 
-svelte template to react component converter (PoC)
+svelte(`lang='ts'`) template to react component converter (PoC)
 
 ```bash
 $ npm install svelte-to-tsx -D
 
 # default css generator is @emotion/css
-$ npm install svelte-to-tsx @emotion/css -D
+$ npm install react react-dom @types/react @types/react-dom @emotion/css -D
 ```
+
+## Concepts
+
+- Generate Component Props Type from `script lang="ts"`, leaving TypeScript type information
+- Convert svelte's built-in functionality into an idiom on React with similar results
+- Import `.svelte` transparently from React
 
 ### API
 
@@ -37,7 +43,7 @@ export default defineConfig({
 });
 ```
 
-## Example
+## Examples
 
 svelte template
 
@@ -100,6 +106,25 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
   );
 };
 ```
+
+so you can use like this.
+
+```ts
+import React from "react";
+import App from "./App.svelte";
+import { createRoot } from "react-dom/client";
+
+const root = document.getElementById("root")!;
+
+createRoot(root).render(<App
+  name="svelte-app"
+  onMessage={(data) => {
+    console.log("message received", data)
+  }
+} />);
+```
+
+(put `App.svelte.d.ts` manually yet)
 
 ## Transform Convensions
 
