@@ -1,5 +1,5 @@
 import { parse as parseSvelte } from "svelte/compiler";
-import * as ts from "typescript";
+import ts from "typescript";
 import type { Attribute, BaseNode, Fragment } from "svelte/types/compiler/interfaces";
 import type { Expression, Identifier } from "estree";
 import { generate as estreeToCode } from "astring";

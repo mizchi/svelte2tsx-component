@@ -29,7 +29,7 @@ const tsxCode = svelteToTsx(code);
 // vite.config.ts
 import { defineConfig } from "vite";
 import { plugin as svelteToTsx } from "svelte-to-tsx";
-import * as ts from "typescript";
+import ts from "typescript";
 
 export default defineConfig({
   plugins: [svelteToTsx({
