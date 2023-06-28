@@ -63,28 +63,3 @@ export function buildCss(cssCode: string): {
   // return gulp.src('src/**/*.css')
   //   .pipe(gulp.dest('dist'));
 }
-
-if (import.meta.vitest) {
-  const { test, expect } = import.meta.vitest;
-  test("convert css", () => {
-    const css = `
-    .aaa {
-      color: red;
-      text-align: center;
-    }
-    `;
-    const { statements, aliasMap } = buildCss(css);
-    const source = ts.factory.createSourceFile(
-      [...statements],
-      ts.factory.createToken(ts.SyntaxKind.EndOfFileToken),
-      ts.NodeFlags.None,
-    );
-    // console.log(ts.createPrinter().printFile(source));
-    // console.log(aliasMap);
-    // expect(result).toBe(`
-    // .a {
-    //   color: red;
-    // }
-    // `);
-  });
-}
