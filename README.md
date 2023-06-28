@@ -1,9 +1,9 @@
-# svelte-to-tsx
+# svelte2tsx-component
 
 svelte(`lang='ts'`) template to react component converter (PoC)
 
 ```bash
-$ npm install svelte-to-tsx -D
+$ npm install svelte2tsx-component -D
 
 # default css generator is @emotion/css
 $ npm install react react-dom @types/react @types/react-dom @emotion/css -D
@@ -18,7 +18,7 @@ $ npm install react react-dom @types/react @types/react-dom @emotion/css -D
 ### API
 
 ```ts
-import { svelteToTsx } from "svelte-to-tsx";
+import { svelteToTsx } from "svelte2tsx-component";
 const code = "<div></div>";
 const tsxCode = svelteToTsx(code);
 ```
