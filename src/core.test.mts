@@ -330,12 +330,24 @@ test("property name", () => {
   expect(formatted).toContain(`<label htmlFor="foo">`);
 });
 
+test("property: inline style", () => {
+  const code = `
+    <div style="color: red"></div>
+`;
+  const result = svelteToTsx(code);
+  const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+  console.log(formatted);
+  // expect(formatted).toContain(`className="c"`);
+  // expect(formatted).toContain(`<label htmlFor="foo">`);
+});
+
 test("selector to css", () => {
   const code = `
     <span class="red">t1</span>
     <span class="raw">t2</span>
     <span class="red container">t3</span>
     <span class="red raw">t4</span>
+    <span class="x y">t5</span>
     <style>
       .container {
         display: flex;
@@ -353,6 +365,7 @@ test("selector to css", () => {
   expect(formatted).toContain(`<span className="raw">t2</span>`);
   expect(formatted).toContain(`<span className={[selector$red, selector$container].join(" ")}>t3</span>`);
   expect(formatted).toContain(`<span className={[selector$red, "raw"].join(" ")}>t4</span>`);
+  expect(formatted).toContain(`<span className="x y">t5</span>`);
   expect(formatted).toContain(`const selector$container = css\``);
   expect(formatted).toContain(`const selector$red = css\``);
 });

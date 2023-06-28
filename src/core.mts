@@ -864,6 +864,15 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
               ts.factory.createStringLiteral(classRaws[0]),
             );
           }
+          // to className="a b"
+          if (classSelectors.length === 0 && classRaws.length > 1) {
+            const joinedClassRows = classRaws.join(" ");
+            return ts.factory.createJsxAttribute(
+              ts.factory.createIdentifier(attrName),
+              ts.factory.createStringLiteral(joinedClassRows),
+            );
+          }
+
           // to className={selector$a}
           if (classSelectors.length === 1 && classRaws.length === 0) {
             return ts.factory.createJsxAttribute(
