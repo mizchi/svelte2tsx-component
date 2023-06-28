@@ -24,9 +24,6 @@ importers:
       '@types/estree':
         specifier: ^1.0.1
         version: 1.0.1
-      '@types/estree-jsx':
-        specifier: ^1.0.0
-        version: 1.0.0
       '@types/prettier':
         specifier: ^2.7.3
         version: 2.7.3
@@ -69,33 +66,6 @@ importers:
       vitest:
         specifier: 0.32.2
         version: 0.32.2
-
-  examples/with-preact:
-    devDependencies:
-      '@emotion/css':
-        specifier: ^11.11.2
-        version: 11.11.2
-      '@types/react':
-        specifier: ^18.2.14
-        version: 18.2.14
-      '@types/react-dom':
-        specifier: ^18.2.6
-        version: 18.2.6
-      preact:
-        specifier: ^10.15.1
-        version: 10.15.1
-      react:
-        specifier: ^18.2.0
-        version: 18.2.0
-      react-dom:
-        specifier: ^18.2.0
-        version: 18.2.0(react@18.2.0)
-      rollup:
-        specifier: ^3.25.3
-        version: 3.25.3
-      vite:
-        specifier: ^4.3.9
-        version: 4.3.9(@types/node@20.3.1)
 
   examples/with-vite:
     devDependencies:
@@ -824,12 +794,6 @@ packages:
 
   /@types/chai@4.3.5:
     resolution: {integrity: sha512-mEo1sAde+UCE6b2hxn332f1g1E8WfYRu6p5SvTKr2ZKC1f7gFJXk4h5PyGP9Dt6gCaG8y8XhwnXWC6Iy2cmBng==}
-    dev: true
-
-  /@types/estree-jsx@1.0.0:
-    resolution: {integrity: sha512-3qvGd0z8F2ENTGr/GG1yViqfiKmRfrXVx5sJyHGFu3z7m5g5utCQtGp/g29JnjflhtQJBv1WDQukHiT58xPcYQ==}
-    dependencies:
-      '@types/estree': 1.0.1
     dev: true
 
   /@types/estree@1.0.1:
@@ -1703,10 +1667,6 @@ packages:
       nanoid: 3.3.6
       picocolors: 1.0.0
       source-map-js: 1.0.2
-    dev: true
-
-  /preact@10.15.1:
-    resolution: {integrity: sha512-qs2ansoQEwzNiV5eAcRT1p1EC/dmEzaATVDJNiB3g2sRDWdA7b7MurXdJjB2+/WQktGWZwxvDrnuRFbWuIr64g==}
     dev: true
 
   /prettier@2.8.8:
