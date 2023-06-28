@@ -17,3 +17,23 @@ export function toSafeIdentifier(input: string): string {
 
   return result;
 }
+
+// https://gist.github.com/goldhand/70de06a3bdbdb51565878ad1ee37e92b
+export const parseInlineStyle = (styles: string): Record<string, string> =>
+  styles
+    .split(";")
+    .filter((style) => style.split(":")[0] && style.split(":")[1])
+    .map((style) => [
+      style
+        .split(":")[0]
+        .trim()
+        .replace(/-./g, (c) => c.substring(1).toUpperCase()),
+      style.split(":")[1].trim(),
+    ])
+    .reduce(
+      (styleObj, style) => ({
+        ...styleObj,
+        [style[0]]: style[1],
+      }),
+      {},
+    );

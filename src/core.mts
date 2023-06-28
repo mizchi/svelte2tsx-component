@@ -16,6 +16,7 @@ import {
   ParsedComponentSignature,
   ParsedStyle,
 } from "./types.mjs";
+import { parseInlineStyle } from "./utils.mjs";
 
 // from svelte source: https://github.com/sveltejs/svelte/blob/master/packages/svelte/src/compiler/preprocess/index.js#L255-L256
 const REGEX_STYLE_TAGS = /<!--[^]*?-->|<style(\s[^]*?)?(?:>([^]*?)<\/style>|\/>)/gi;
@@ -844,7 +845,30 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
         const name = node.name;
         // TODO: handle array
         const value = node.value[0] ?? "";
+        if (node.value.length > 1) {
+          throw new Error("Not supported: multiple attribute values");
+        }
         const attrName = getReactAttributeName(name);
+
+        // convert style string to style object
+        if (attrName === "style" && value.type === "Text") {
+          const styleObj = parseInlineStyle(value.data);
+          return ts.factory.createJsxAttribute(
+            ts.factory.createIdentifier(attrName),
+            ts.factory.createJsxExpression(
+              undefined,
+              ts.factory.createObjectLiteralExpression(
+                Object.entries(styleObj).map(([key, value]) => {
+                  return ts.factory.createPropertyAssignment(
+                    ts.factory.createIdentifier(key),
+                    ts.factory.createStringLiteral(value),
+                  );
+                }),
+              ),
+            ),
+          );
+        }
+
         // use alias map to convert
         if (attrName === "className" && value.type === "Text") {
           const classSelectors: string[] = [];
@@ -920,28 +944,10 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
           tagName = "Component";
           cctx.hasSelf = true;
         } else if (node.name === "svelte:component") {
-          // const thisIdent = node.expression as Identifier;
           tagName = node.expression.name;
-          // console.log("bounded", boundedThis, node);
-          // const expression = boundedThis?.value[0];
-          // throw "stop";
-          // tagName = "This";
-          // if (boundedThis) {
         } else {
           tagName = node.name as string;
         }
-        // if (node.name === "svelte:component") {
-        //   tagName = "Component";
-        //   cctx.hasSelf = true;
-        // } else {
-        //   tagName = node.name as string;
-        // }
-
-        // TODO: handle component tag
-        // const tagName = node.name === "svelte:self" ? "Self" : node.name as string;
-        // cctx.hasSelf = true;
-        // console.log("tagName?", tagName);
-
         const attributes = node.attributes.map((attr: Attribute) => {
           return _visit(attr, false, depth + 1);
         });

@@ -336,9 +336,16 @@ test("property: inline style", () => {
 `;
   const result = svelteToTsx(code);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
-  console.log(formatted);
-  // expect(formatted).toContain(`className="c"`);
-  // expect(formatted).toContain(`<label htmlFor="foo">`);
+  expect(formatted).toContain(`style={{ color: "red" }}`);
+});
+
+test.skip("property: multiple expression", () => {
+  const code = `
+    <div style="color: {color}"></div>
+`;
+  const result = svelteToTsx(code);
+  const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
+  expect(formatted).toContain(`style={{ color: color }}`);
 });
 
 test("selector to css", () => {
