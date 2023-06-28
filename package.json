@@ -2,7 +2,7 @@
   "name": "svelte2tsx-component",
   "author": "mizchi",
   "license": "MIT",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "svelte template to react component converter",
   "type": "module",
   "main": "lib/index.mjs",
@@ -26,10 +26,6 @@
     "@types/estree": "^1.0.1",
     "@types/prettier": "^2.7.3",
     "@types/react": "^18.2.14",
-    "astring": "^1.8.6",
-    "estree-walker": "^3.0.3",
-    "magic-string": "^0.30.0",
-    "postcss": "^8.4.24",
     "prettier": "^2.8.8",
     "rollup": "^3.25.3",
     "rome": "^12.1.3",
@@ -40,8 +36,11 @@
     "vitest": "0.32.2"
   },
   "dependencies": {
-    "svelte": "^4.0.0",
-    "ts-clone-node": "^2.0.4"
+    "ts-clone-node": "^2.0.4",
+    "astring": "^1.8.6",
+    "estree-walker": "^3.0.3",
+    "magic-string": "^0.30.0",
+    "postcss": "^8.4.24"
   },
   "files": ["lib", "src"]
 }

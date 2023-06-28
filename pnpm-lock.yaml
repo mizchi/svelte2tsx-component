@@ -8,8 +8,20 @@ importers:
 
   .:
     dependencies:
+      astring:
+        specifier: ^1.8.6
+        version: 1.8.6
+      estree-walker:
+        specifier: ^3.0.3
+        version: 3.0.3
+      magic-string:
+        specifier: ^0.30.0
+        version: 0.30.0
+      postcss:
+        specifier: ^8.4.24
+        version: 8.4.24
       svelte:
-        specifier: ^4.0.0
+        specifier: 4.*
         version: 4.0.0
       ts-clone-node:
         specifier: ^2.0.4
@@ -30,18 +42,6 @@ importers:
       '@types/react':
         specifier: ^18.2.14
         version: 18.2.14
-      astring:
-        specifier: ^1.8.6
-        version: 1.8.6
-      estree-walker:
-        specifier: ^3.0.3
-        version: 3.0.3
-      magic-string:
-        specifier: ^0.30.0
-        version: 0.30.0
-      postcss:
-        specifier: ^8.4.24
-        version: 8.4.24
       prettier:
         specifier: ^2.8.8
         version: 2.8.8
@@ -923,7 +923,7 @@ packages:
   /astring@1.8.6:
     resolution: {integrity: sha512-ISvCdHdlTDlH5IpxQJIex7BWBywFWgjJSVdwst+/iQCoEYnyOaQ95+X1JGshuBjGp6nxKUy1jMgE3zPqN7fQdg==}
     hasBin: true
-    dev: true
+    dev: false
 
   /axobject-query@3.2.1:
     resolution: {integrity: sha512-jsyHu61e6N4Vbz/v18DHwWYKK0bSWLqn47eeDSKPB7m8tqMHF9YJ+mhIk2lVteyZrY8tnSj/jHOv4YiTCuCJgg==}
@@ -1566,7 +1566,6 @@ packages:
     resolution: {integrity: sha512-BGcqMMJuToF7i1rt+2PWSNVnWIkGCU78jBG3RxO/bZlnZPK2Cmi2QaffxGO/2RvWi9sL+FAiRiXMgsyxQ1DIDA==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
-    dev: true
 
   /node-releases@2.0.12:
     resolution: {integrity: sha512-QzsYKWhXTWx8h1kIvqfnC++o0pEmpRQA/aenALsL2F4pqNVr7YzcdMlDij5WBnwftRbJCNJL/O7zdKaxKPHqgQ==}
@@ -1645,7 +1644,6 @@ packages:
 
   /picocolors@1.0.0:
     resolution: {integrity: sha512-1fygroTLlHu66zi26VoTDv8yRgm0Fccecssto+MhsZ0D/DGW2sm8E8AjW7NU5VVTRt5GxbeZ5qBuJr+HyLYkjQ==}
-    dev: true
 
   /picomatch@2.3.1:
     resolution: {integrity: sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA==}
@@ -1667,7 +1665,6 @@ packages:
       nanoid: 3.3.6
       picocolors: 1.0.0
       source-map-js: 1.0.2
-    dev: true
 
   /prettier@2.8.8:
     resolution: {integrity: sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q==}
