@@ -150,7 +150,7 @@ export default ({ foo, bar = 1 }: { foo: number, bar?: number }) => {
 }
 ```
 
-### PropsType with svelte's createEventDispatcher
+### PropsType with svelte's `createEventDispatcher<{}>()`
 
 svelte
 
@@ -201,15 +201,37 @@ export default ({
 <div id="myid"></div>
 <div id={expr}></div>
 <div id="{expr}"></div>
+<div id="head{expr}tail"></div>
 <div {id}></div>
 <div {...params}></div>
 ```
+
+### Slot (default)
+
+svelte
+
+```svelte
+<slot />
+```
+
+tsx
+
+```tsx
+import { type ReactNode } from "react";
+export default ({children}, { children: ReactNode }) => {
+  return <>
+    {children}
+  </>;
+}
+```
+
+(Named slot not supported)
 
 ### onMount / onDestroy / beforeUpdate / afterUpdate
 
 Convert to react's `useEffect`
 
-### Style
+### style property to object
 
 ```svelte
 <span class="red">text</span>
