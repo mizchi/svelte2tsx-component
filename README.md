@@ -197,19 +197,12 @@ export default ({
 
 ### Expression in svelte template
 
-Supported
-
 ```svelte
 <div id="myid"></div>
 <div id={expr}></div>
+<div id="{expr}"></div>
 <div {id}></div>
 <div {...params}></div>
-```
-
-Not supported (yet)
-
-```svelte
-<div id="{expr}"></div>
 ```
 
 ### onMount / onDestroy / beforeUpdate / afterUpdate
@@ -246,16 +239,25 @@ Only support **single class selector** like `.red`.
 Not Supported these patterns.
 
 ```css
+/* selector combination */
+.foo .bar {}
 .foo > .bar {}
 
+/* element selector */
 div {}
 
+/* global selector */
 :global(div) {}
 ```
 
 ### Unsupported features
 
-- [ ] Inline style property: `<div style="...">` to `<div style={{}}>`
+- [ ] `style` property with expression
+  - ex. `<div style="color: {color}"></div>`
+  - ex. `<div style={obj}></div>`
+- [ ] `class` property with expression
+  - ex. `<div class="c1 {v}"></div>`
+  - ex. `<div class={expr}></div>`
 - [ ] Await Block
 - [ ] Property Bindings `<input bind:value />`
 - `<svelte:options />`
@@ -310,6 +312,7 @@ Currently, the scope is not parsed, so unintended variable conflicts may occur.
 - [x] Style: `<style>` tag to `@emotion/css`
 - [x] Style: option for `import {css} from "..."` importer
 - [x] Plugin: transparent svelte to react loader for rollup or vite
+- [x] Inline style property: `<div style="...">` to `<div style={{}}>`
 
 ## TODO
 

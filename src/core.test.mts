@@ -77,7 +77,9 @@ test("complex", () => {
     </style>
 `;
   // const preparsed = preparse(code);
-  const result = svelteToTsx(code);
+  const result = svelteToTsx(code, {
+    warn: () => {},
+  });
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -186,7 +188,9 @@ test("template", () => {
     -->
     <button on:click={onClick}>click</button>
 `;
-  const result = svelteToTsx(code);
+  const result = svelteToTsx(code, {
+    warn: () => {},
+  });
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
   // console.log("-------------");
   // console.log(formatted);
@@ -339,13 +343,21 @@ test("property: inline style", () => {
   expect(formatted).toContain(`style={{ color: "red" }}`);
 });
 
-test.skip("property: multiple expression", () => {
+test("property: multiple expression", () => {
   const code = `
-    <div style="color: {color}"></div>
+    <img alt="head{desc}" />
+    <img alt="{desc}tail" />
+    <img alt="head{desc}mid{desc2}" />
+    <img alt="head{desc}mid{desc2}tail" />
 `;
   const result = svelteToTsx(code);
+  // console.log(result);
   const formatted = prettier.format(result, { filepath: "input.tsx", parser: "typescript" });
-  expect(formatted).toContain(`style={{ color: color }}`);
+  // console.log(formatted);
+  expect(formatted).toContain(`alt={\`head\${desc}\`}`);
+  expect(formatted).toContain(`alt={\`\${desc}tail\`}`);
+  expect(formatted).toContain(`alt={\`head\${desc}mid\${desc2}\`}`);
+  expect(formatted).toContain(`alt={\`head\${desc}mid\${desc2}tail\`}`);
 });
 
 test("selector to css", () => {

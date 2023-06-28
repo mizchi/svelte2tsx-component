@@ -1,12 +1,13 @@
 import { parse as parseSvelte } from "svelte/compiler";
 import ts from "typescript";
-import type { Attribute, BaseNode, Fragment } from "svelte/types/compiler/interfaces";
+import type { Attribute, BaseNode, Fragment, MustacheTag } from "svelte/types/compiler/interfaces";
 import type { Expression, Identifier } from "estree";
 import { generate as estreeToCode } from "astring";
 // import prettier from "prettier";
 import { getReactEventNameFromHandlerName } from "./eventMap.mjs";
 import { getReactAttributeName } from "./attributeMap.mjs";
 import { buildCss } from "./css.mjs";
+import { UnsupportedError } from "./errors.js";
 import {
   ConvertContext,
   InternalOptions,
@@ -33,12 +34,14 @@ export function svelteToSourceFile(code: string, options: Options = {}) {
   const parsed = parse(code);
   // build options
   const internalOptions: InternalOptions = {
+    warn: options.warn ?? console.warn,
     cssImporter: options.cssImporter ?? "@emotion/css",
     jsxImporter: options.jsxImporter ?? "react",
     hooksImporter: options.hooksImporter ?? ((apiName: string, jsx: JsxImporter) => [apiName, jsx]),
   };
 
   const cctx: ConvertContext = {
+    warn: options.warn ?? console.warn,
     options: internalOptions,
     hasSelf: false,
     hasDefaultSlot: false,
@@ -224,7 +227,10 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
           if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
             // Only support direct ExpressionStatement assign like `foo = 1`
             if (node.parent && !ts.isExpressionStatement(node.parent)) {
-              throw new Error(`Not Supported: intermediate let value assignment`);
+              throw new UnsupportedError(`Not Supported: intermediate let value assignment`, [
+                node.getStart(),
+                node.getEnd(),
+              ]);
             }
             if (ts.isIdentifier(node.left)) {
               if (cctx.mutables.has(node.left.text)) {
@@ -313,7 +319,7 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
                   node.arguments.slice(1),
                 );
               } else {
-                throw new Error("Not supported: dynamic event name");
+                throw new UnsupportedError("dynamic event binding", [node.getStart(), node.getEnd()]);
               }
               // const funcName = `on${node.arguments[0].text[0].toUpperCase()}${node.arguments[0].text.slice(1)}`;
               // return ts.factory.createCallExpression(
@@ -473,7 +479,7 @@ const createSvelteTransformer: (cctx: ConvertContext) => { transformer: ts.Trans
 /** Convert script tags to toplevel and instance statements  */
 function buildCodeBlock(scriptTags: Parsed["scriptTags"], cctx: ConvertContext): ParsedComponentSignature {
   if (scriptTags.length > 2) {
-    throw new Error("Not supported: script tag only allows 2 blocks including default and module");
+    throw new UnsupportedError("Not supported: script tag only allows 2 blocks including default and module");
   }
   const moduleBlock = scriptTags.find((tag) => tag.module);
   const defaultBlock = scriptTags.find((tag) => !tag.module);
@@ -635,7 +641,7 @@ function estreeExprToTsExpr(expr: Expression) {
   const file = ts.createSourceFile("expr.tsx", exprCode, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
   const tsExpr = file.statements[0] as ts.ExpressionStatement;
   if (tsExpr == null) {
-    throw new Error("Failed to parse expression: " + exprCode);
+    throw new UnsupportedError("Failed to parse expression: " + exprCode);
   }
   return tsExpr.expression;
 }
@@ -823,7 +829,7 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
       }
 
       case "AwaitBlock": {
-        throw new Error("Not supported: {#await}");
+        throw new UnsupportedError("Not supported: {#await}", [node.start, node.end]);
       }
       case "EventHandler": {
         const expr = estreeExprToTsExpr(node.expression);
@@ -843,15 +849,16 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
       }
       case "Attribute": {
         const name = node.name;
-        // TODO: handle array
-        const value = node.value[0] ?? "";
-        if (node.value.length > 1) {
-          throw new Error("Not supported: multiple attribute values");
-        }
         const attrName = getReactAttributeName(name);
+        if (attrName === "style") {
+          if (node.value.length > 1) {
+            throw new UnsupportedError(`style with multiple values`, [node.start, node.end]);
+          }
+          const value = node.value[0];
 
-        // convert style string to style object
-        if (attrName === "style" && value.type === "Text") {
+          if (value.type !== "Text") {
+            throw new UnsupportedError("style with non-text node", [value.start, value.end]);
+          }
           const styleObj = parseInlineStyle(value.data);
           return ts.factory.createJsxAttribute(
             ts.factory.createIdentifier(attrName),
@@ -868,64 +875,81 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
             ),
           );
         }
-
-        // use alias map to convert
-        if (attrName === "className" && value.type === "Text") {
-          const classSelectors: string[] = [];
-          const classRaws: string[] = [];
-          for (const cls of value.data.split(/\s+/)) {
-            if (aliasMap.has(cls)) {
-              classSelectors.push(aliasMap.get(cls)!);
-            } else {
-              // alert
-              classRaws.push(cls);
+        if (attrName === "className") {
+          if (node.value.length > 1) {
+            throw new UnsupportedError("Not supported: className with multiple values", [node.start, node.end]);
+          }
+          const value = node.value[0];
+          if (value.type === "Text") {
+            // throw new Error("Not supported: className with multiple values");
+            const classSelectors: string[] = [];
+            const classRaws: string[] = [];
+            for (const cls of value.data.split(/\s+/)) {
+              if (aliasMap.has(cls)) {
+                classSelectors.push(aliasMap.get(cls)!);
+              } else {
+                // alert
+                classRaws.push(cls);
+              }
             }
-          }
-          // to className="a"
-          if (classSelectors.length === 0 && classRaws.length === 1) {
-            return ts.factory.createJsxAttribute(
-              ts.factory.createIdentifier(attrName),
-              ts.factory.createStringLiteral(classRaws[0]),
-            );
-          }
-          // to className="a b"
-          if (classSelectors.length === 0 && classRaws.length > 1) {
-            const joinedClassRows = classRaws.join(" ");
-            return ts.factory.createJsxAttribute(
-              ts.factory.createIdentifier(attrName),
-              ts.factory.createStringLiteral(joinedClassRows),
-            );
-          }
+            // to className="a"
+            if (classSelectors.length === 0 && classRaws.length === 1) {
+              return ts.factory.createJsxAttribute(
+                ts.factory.createIdentifier(attrName),
+                ts.factory.createStringLiteral(classRaws[0]),
+              );
+            }
+            // to className="a b"
+            if (classSelectors.length === 0 && classRaws.length > 1) {
+              const joinedClassRows = classRaws.join(" ");
+              return ts.factory.createJsxAttribute(
+                ts.factory.createIdentifier(attrName),
+                ts.factory.createStringLiteral(joinedClassRows),
+              );
+            }
 
-          // to className={selector$a}
-          if (classSelectors.length === 1 && classRaws.length === 0) {
+            // to className={selector$a}
+            if (classSelectors.length === 1 && classRaws.length === 0) {
+              return ts.factory.createJsxAttribute(
+                ts.factory.createIdentifier(attrName),
+                ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier(classSelectors[0])),
+              );
+            }
+            // className={[selector$aaa, selector$bbb].join(' ')}
             return ts.factory.createJsxAttribute(
               ts.factory.createIdentifier(attrName),
-              ts.factory.createJsxExpression(undefined, ts.factory.createIdentifier(classSelectors[0])),
-            );
-          }
-          // className={[selector$aaa, selector$bbb].join(' ')}
-          return ts.factory.createJsxAttribute(
-            ts.factory.createIdentifier(attrName),
-            ts.factory.createJsxExpression(
-              undefined,
-              ts.factory.createCallExpression(
-                ts.factory.createPropertyAccessExpression(
-                  ts.factory.createArrayLiteralExpression([
-                    ...classSelectors.map((cls) => ts.factory.createIdentifier(cls)),
-                    ...classRaws.map((cls) => ts.factory.createStringLiteral(cls)),
-                  ]),
-                  "join",
-                ),
+              ts.factory.createJsxExpression(
                 undefined,
-                [ts.factory.createStringLiteral(" ")],
+                ts.factory.createCallExpression(
+                  ts.factory.createPropertyAccessExpression(
+                    ts.factory.createArrayLiteralExpression([
+                      ...classSelectors.map((cls) => ts.factory.createIdentifier(cls)),
+                      ...classRaws.map((cls) => ts.factory.createStringLiteral(cls)),
+                    ]),
+                    "join",
+                  ),
+                  undefined,
+                  [ts.factory.createStringLiteral(" ")],
+                ),
               ),
-            ),
-          );
-        } else {
-          const right = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
-          return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), right);
+            );
+          } else {
+            cctx.warn(`[Warning] Skip className conversion to selector because it's not a text node`, [
+              node.start,
+              node.end,
+            ]);
+          }
         }
+
+        let expr: ts.JsxAttributeValue;
+        if (node.value.length > 1) {
+          const template = valuesToTemplateLiteral(node.value, depth + 1);
+          expr = ts.factory.createJsxExpression(undefined, template);
+        } else {
+          const value = node.value[0];
+          expr = _visit(value, false, depth + 1) as ts.JsxAttributeValue;
+        }
+        return ts.factory.createJsxAttribute(ts.factory.createIdentifier(attrName), expr);
       }
       case "Slot": {
         const isNamedSlot = (node.attributes ?? []).some((attr: Attribute) => attr.name === "name");
@@ -983,6 +1007,54 @@ function templateToTsx(root: Fragment, aliasMap: Map<string, string>, cctx: Conv
         throw new Error("Unknown node type: " + node.type);
       }
     }
+  }
+  function valuesToTemplateLiteral(values: BaseNode[], depth: number): ts.TemplateLiteral {
+    let consuming = values.slice();
+
+    let headNode;
+    if (consuming[0].type === "Text") {
+      headNode = ts.factory.createTemplateHead(consuming[0].data);
+      consuming.shift();
+    } else {
+      headNode = ts.factory.createTemplateHead("");
+    }
+
+    const spans: ts.TemplateSpan[] = [];
+    let queuedExpr: ts.Expression | undefined;
+    while (consuming.length > 0) {
+      const nextNode = consuming.shift()!;
+      const isLastNode = consuming.length === 0;
+
+      // consume as span with queued expr
+      if (nextNode.type === "Text") {
+        if (queuedExpr) {
+          if (isLastNode) {
+            spans.push(ts.factory.createTemplateSpan(queuedExpr, ts.factory.createTemplateTail(nextNode.data)));
+            break;
+          }
+          spans.push(ts.factory.createTemplateSpan(queuedExpr, ts.factory.createTemplateMiddle(nextNode.data)));
+          queuedExpr = undefined;
+        }
+        continue;
+      }
+      // consume as middle if queued expr
+      if (queuedExpr) {
+        spans.push(ts.factory.createTemplateSpan(queuedExpr, ts.factory.createTemplateMiddle("")));
+      }
+      const exprNode = _visit(nextNode, false, depth + 1) as ts.JsxExpression;
+      queuedExpr = exprNode.expression!;
+
+      // add tail if last
+      if (isLastNode) {
+        spans.push(ts.factory.createTemplateSpan(queuedExpr, ts.factory.createTemplateTail("")));
+        break;
+      }
+    }
+    return ts.factory.createTemplateExpression(headNode, spans);
+    // return ts.factory.createJsxAttribute(
+    //   ts.factory.createIdentifier(attrName),
+    //   ts.factory.createJsxExpression(undefined, templateLiteral),
+    // );
   }
 }
 

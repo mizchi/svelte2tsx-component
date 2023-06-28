@@ -6,12 +6,14 @@ export type hooksImporter = (apiName: string, jsx: JsxImporter) => [apiName: str
 
 /** Outcoming */
 export type Options = {
+  warn?: (message: string, pos: [start: number, end: number]) => void;
   cssImporter?: CssImporter;
   jsxImporter?: JsxImporter;
   hooksImporter?: hooksImporter;
 };
 
 export type InternalOptions = {
+  warn: (message: string, pos: [start: number, end: number]) => void;
   cssImporter: CssImporter;
   jsxImporter: JsxImporter;
   hooksImporter: hooksImporter;
@@ -43,6 +45,7 @@ export type ParsedStyle = {
 
 /** @internal */
 export type ConvertContext = {
+  warn: (message: string, pos: [start: number, end: number]) => void;
   options: InternalOptions;
   hasSelf: boolean;
   // slotNames: Set<string>;
