@@ -2,7 +2,7 @@
   "name": "svelte2tsx-component",
   "author": "mizchi",
   "license": "MIT",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "svelte template to react component converter",
   "type": "module",
   "main": "lib/index.mjs",
@@ -15,7 +15,11 @@
     "typecheck": "tsc -p . --noEmit",
     "format": "rome format --write src package.json"
   },
-  "keywords": ["svelte", "react", "compiler"],
+  "keywords": [
+    "svelte",
+    "react",
+    "compiler"
+  ],
   "peerDependencies": {
     "svelte": "4.*",
     "typescript": "*"
@@ -42,5 +46,8 @@
     "magic-string": "^0.30.0",
     "postcss": "^8.4.24"
   },
-  "files": ["lib", "src"]
+  "files": [
+    "lib",
+    "src"
+  ]
 }
