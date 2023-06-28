@@ -64,25 +64,25 @@ svelte template
     console.log("clicked");
     mut = mut + 1;
   }
-
-  const className = "cls";
 </script>
-<div id="x" class={className}>
+<div id="x" class="red">
   <h1>Nest</h1>
   hello, {x}
 </div>
 <button on:click={onClick}>click</button>
 <style>
-  div {
+  .red {
     color: red;
   }
 </style>
 ```
 
-to tsx react component
+to tsx component (`react`)
 
 ```ts
 import { useEffect, useState } from "react";
+import { css } from "@emotion/css";
+
 export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
   const x: number = 1;
   const [mut, set$mut] = useState(2);
@@ -94,10 +94,9 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
     console.log("clicked");
     set$mut(mut + 1);
   };
-  const className = "cls";
   return (
     <>
-      <div id="x" className={className}>
+      <div id="x" className={selector$red}>
         <h1>Nest</h1>
         hello, {x}
       </div>
@@ -105,9 +104,13 @@ export default ({ foo, bar = 1 }: { foo: number; bar?: number }) => {
     </>
   );
 };
+
+const selector$red = css`
+  color: red;
+`;
 ```
 
-so you can use like this.
+So you can use like this.
 
 ```ts
 import React from "react";
@@ -252,6 +255,7 @@ div {}
 
 ### Unsupported features
 
+- [ ] Inline style property: `<div style="...">` to `<div style={{}}>`
 - [ ] Await Block
 - [ ] Property Bindings `<input bind:value />`
 - `<svelte:options />`
@@ -304,7 +308,7 @@ Currently, the scope is not parsed, so unintended variable conflicts may occur.
 - [x] SpecialElements: `<svelte:component this={currentSelection.component} foo={bar} />`
 - [x] Template: attribute name converter like `class` => `className`, `on:click` => `onClick`
 - [x] Style: `<style>` tag to `@emotion/css`
-- [ ] Style: option for `import {css} from "..."` importer
+- [x] Style: option for `import {css} from "..."` importer
 - [x] Plugin: transparent svelte to react loader for rollup or vite
 
 ## TODO
@@ -329,7 +333,11 @@ Currently, the scope is not parsed, so unintended variable conflicts may occur.
 - [ ] SpecialElements: `<svelte:fragment>`
 - [ ] SpecialElements: named slots: `<slot name="...">`
 - [ ] SpecialElements: `$$slots`
-- [ ] Generator to `.svelte` => `.svelte.d.ts`
+- [ ] Generator: `.d.ts` (`<name>.svelte` with `<name>.svelte.d.ts`)
+- [ ] Generator: preact
+- [ ] Generator: qwik
+- [ ] Generator: solid
+- [ ] Generator: vue-tsx
 
 ## Why?
 
