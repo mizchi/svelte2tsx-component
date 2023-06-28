@@ -1,4 +1,4 @@
-import { plugin } from "./plugin";
+import { plugin } from "./plugin.mjs";
 import { test, expect } from "vitest";
 import { rollup } from "rollup";
 import ts from "typescript";

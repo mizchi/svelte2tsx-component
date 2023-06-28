@@ -1,6 +1,6 @@
 import prettier from "prettier";
 import { test, expect } from "vitest";
-import { parse, svelteToTsx } from "./core";
+import { parse, svelteToTsx } from "./core.mjs";
 
 test("parse", () => {
   const code = `

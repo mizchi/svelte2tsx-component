@@ -1,7 +1,7 @@
 import ts from "typescript";
 
 import { test, expect } from "vitest";
-import { buildCss } from "./css";
+import { buildCss } from "./css.mjs";
 test("convert css", () => {
   const css = `
     .aaa {

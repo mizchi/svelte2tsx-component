@@ -1,8 +1,8 @@
 import { type Plugin } from "rollup";
 import path from "node:path";
-import { svelteToTsx } from "./core";
+import { svelteToTsx } from "./core.mjs";
 import ts from "typescript";
-import { PluginOptions } from "./types";
+import { PluginOptions } from "./types.mjs";
 
 export const plugin: (opts: PluginOptions) => Plugin = ({
   tsCompilerOptions,

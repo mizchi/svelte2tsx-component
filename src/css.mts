@@ -1,6 +1,6 @@
 import { parse } from "postcss";
 import ts from "typescript";
-import { toSafeIdentifier } from "./utils";
+import { toSafeIdentifier } from "./utils.mjs";
 
 // TODO: Support object style
 export function buildCss(cssCode: string): {

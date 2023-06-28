@@ -4,9 +4,9 @@ import type { Attribute, BaseNode, Fragment } from "svelte/types/compiler/interf
 import type { Expression, Identifier } from "estree";
 import { generate as estreeToCode } from "astring";
 // import prettier from "prettier";
-import { getReactEventNameFromHandlerName } from "./eventMap";
-import { getReactAttributeName } from "./attributeMap";
-import { buildCss } from "./css";
+import { getReactEventNameFromHandlerName } from "./eventMap.mjs";
+import { getReactAttributeName } from "./attributeMap.mjs";
+import { buildCss } from "./css.mjs";
 import {
   ConvertContext,
   InternalOptions,
@@ -15,7 +15,7 @@ import {
   Parsed,
   ParsedComponentSignature,
   ParsedStyle,
-} from "./types";
+} from "./types.mjs";
 
 // from svelte source: https://github.com/sveltejs/svelte/blob/master/packages/svelte/src/compiler/preprocess/index.js#L255-L256
 const REGEX_STYLE_TAGS = /<!--[^]*?-->|<style(\s[^]*?)?(?:>([^]*?)<\/style>|\/>)/gi;

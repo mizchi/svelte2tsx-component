@@ -5,9 +5,9 @@
   "version": "0.0.1",
   "description": "svelte template to react component converter",
   "type": "module",
-  "main": "lib/index.js",
-  "module": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "main": "lib/index.mjs",
+  "module": "lib/index.mjs",
+  "types": "lib/index.d.mts",
   "scripts": {
     "prepublishOnly": "pnpm build",
     "build": "tsc -p .",
