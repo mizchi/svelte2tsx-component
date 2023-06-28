@@ -2,7 +2,6 @@
   "name": "svelte-to-react",
   "author": "mizchi",
   "license": "MIT",
-  "private": true,
   "version": "0.0.1",
   "description": "svelte template to react component converter",
   "type": "module",
