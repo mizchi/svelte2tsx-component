@@ -2,7 +2,7 @@
   "name": "svelte2tsx-component",
   "author": "mizchi",
   "license": "MIT",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "svelte template to react component converter",
   "type": "module",
   "main": "lib/index.mjs",
